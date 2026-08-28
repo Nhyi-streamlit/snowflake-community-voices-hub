@@ -142,67 +142,87 @@ with tab_browse:
         if sel_p: filtered = filtered[filtered["Partner"].isin(sel_p)]
         if unclaimed: filtered = filtered[filtered["Interested_Name"].str.strip()==""]
 
-        st.markdown(f"**{len(filtered)} open slot(s)**")
+        # Sort by date ──────────────────────────────────────────────────────────
+        def _sort_key(d):
+            """Convert 'Sep 2, 2026' / '9/2' / '9/10/2026' to a comparable string."""
+            from datetime import datetime as _dt
+            d = str(d).strip()
+            for fmt in ("%m/%d/%Y","%m/%d","%b %d, %Y","%B %d, %Y","%b %d %Y"):
+                try:
+                    x = _dt.strptime(d.split()[0] if len(d.split()) == 1 else d, fmt)
+                    if x.year < 2000: x = x.replace(year=2026)
+                    return x.strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+            return d  # fallback — keeps original string order
 
-        for partner, group in filtered.groupby("Partner"):
-            st.markdown(f"**{partner}**")
-            cols = st.columns(3, gap="medium")
-            for ci, (_, slot) in enumerate(group.iterrows()):
-                city=slot["City"]; ev_date=slot["Date"]; region=slot["Region"]
-                sheet_row=int(slot["_sheet_row"]); claimed=slot["Interested_Name"].strip()
-                bg, accent = REGION_COLORS.get(region, ("#F7FAFC","#4A5568"))
-                with cols[ci%3]:
-                    st.markdown(f"""
-                    <div style="background:{bg};border:1px solid {accent}40;border-radius:12px;
-                                 padding:18px 20px;margin-bottom:8px;">
-                      <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                        <span style="font-size:0.7rem;font-weight:700;padding:2px 10px;border-radius:20px;
-                               background:{accent}20;color:{accent};border:1px solid {accent}40;">{region}</span>
-                        <span style="font-size:0.7rem;color:#A0AEC0;">{partner}</span>
-                      </div>
-                      <div style="font-size:1.1rem;font-weight:700;color:#0E2346;">{city}</div>
-                      <div style="font-size:0.88rem;color:#4A5568;margin-top:2px;">📅 {ev_date}</div>
-                      {"<div style='font-size:0.78rem;color:#718096;margin-top:4px;'>Interested: " + claimed + "</div>" if claimed else ""}
-                    </div>
-                    """, unsafe_allow_html=True)
+        filtered = filtered.copy()
+        filtered["_sort_date"] = filtered["Date"].apply(_sort_key)
+        filtered = filtered.sort_values("_sort_date").reset_index(drop=True)
 
-                    key_open=f"sp_open_{sheet_row}"; key_done=f"sp_done_{sheet_row}"
-                    if st.session_state.get(key_done):
-                        st.success("You're on the list!", icon="✅")
-                        cid_val=st.session_state.get(f"sp_cid_{sheet_row}","")
-                        if cid_val:
-                            st.markdown(f"<div class='id-box' style='padding:8px 12px;margin:4px 0;'><div class='label' style='font-size:0.65rem;'>Your ID</div><div class='id' style='font-size:0.9rem;'>{cid_val}</div></div>", unsafe_allow_html=True)
-                    elif st.session_state.get(key_open):
-                        with st.form(key=f"sp_form_{sheet_row}"):
-                            n = st.text_input("Your name", key=f"sp_n_{sheet_row}")
-                            e = st.text_input("Your email", key=f"sp_e_{sheet_row}")
-                            sub = st.form_submit_button("Submit", type="primary", use_container_width=True)
-                        if sub and n and e:
-                            write_signup_to_slots(sheet_row, n, e)
-                            conf_id = generate_confirmation_id()
-                            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            parts = n.split()
-                            append_row("Speaker_Applications", [
-                                conf_id, now, "Pending",
-                                parts[0], " ".join(parts[1:]) if len(parts)>1 else "", e,
-                                "","","","","",
-                                "Community Member","","",
-                                f"{partner} — {city}","",
-                                ev_date,"",city,"",
-                                "In-person conference","","","","","","",
-                                "Travel grant (flights), Snowflake swag kit","","0",
-                                f"Signed up from Events Board — {partner} {city} {ev_date}","","",
-                            ])
-                            st.session_state[key_done]=True; st.session_state[key_open]=False
-                            st.session_state[f"sp_cid_{sheet_row}"]=conf_id
-                            st.cache_data.clear(); st.rerun()
-                        elif sub:
-                            st.warning("Please enter both name and email.")
-                    else:
-                        st.button("I'm interested", key=f"sp_btn_{sheet_row}",
-                                  on_click=lambda k=key_open: st.session_state.update({k:True}),
-                                  use_container_width=True)
-            st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"**{len(filtered)} open slot(s) — sorted by date**")
+
+        # ── Summary table ────────────────────────────────────────────────────
+        display_df = filtered[["Date","City","Region","Partner","Interested_Name"]].copy()
+        display_df.columns = ["Date","City","Region","Partner / Series","Interest Received From"]
+        display_df["Interest Received From"] = display_df["Interest Received From"].replace("", "—")
+        st.dataframe(
+            display_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown("---")
+        st.markdown("#### Sign up for a slot")
+        st.caption("Expand a row to register your interest. You\'ll receive a Confirmation ID by email.")
+
+        for _, slot in filtered.iterrows():
+            city=slot["City"]; ev_date=slot["Date"]; region=slot["Region"]
+            partner=slot["Partner"]; sheet_row=int(slot["_sheet_row"])
+            claimed=slot["Interested_Name"].strip()
+            key_open=f"sp_open_{sheet_row}"; key_done=f"sp_done_{sheet_row}"
+
+            label = f"📅 {ev_date}  ·  **{city}**  ·  {partner}  ·  {region}"
+            if claimed:
+                label += f"  ·  ✋ {claimed}"
+
+            with st.expander(label):
+                if st.session_state.get(key_done):
+                    st.success("You're on the list!", icon="✅")
+                    cid_val=st.session_state.get(f"sp_cid_{sheet_row}","")
+                    if cid_val:
+                        st.markdown(f"<div class='id-box' style='padding:8px 12px;'><div class='label' style='font-size:0.65rem;'>Confirmation ID</div><div class='id' style='font-size:0.9rem;'>{cid_val}</div></div>", unsafe_allow_html=True)
+                elif st.session_state.get(key_open):
+                    with st.form(key=f"sp_form_{sheet_row}"):
+                        c_n, c_e = st.columns(2)
+                        with c_n: n = st.text_input("Your name", key=f"sp_n_{sheet_row}")
+                        with c_e: e = st.text_input("Your email", key=f"sp_e_{sheet_row}")
+                        sub = st.form_submit_button("Submit interest", type="primary", use_container_width=True)
+                    if sub and n and e:
+                        write_signup_to_slots(sheet_row, n, e)
+                        conf_id = generate_confirmation_id()
+                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        parts = n.split()
+                        append_row("Speaker_Applications", [
+                            conf_id, now, "Pending",
+                            parts[0], " ".join(parts[1:]) if len(parts)>1 else "", e,
+                            "","","","","",
+                            "Community Member","","",
+                            f"{partner} — {city}","",
+                            ev_date,"",city,"",
+                            "In-person conference","","","","","","",
+                            "Travel grant (flights), Snowflake swag kit","","0",
+                            f"Signed up from Events Board — {partner} {city} {ev_date}","","",
+                        ])
+                        st.session_state[key_done]=True; st.session_state[key_open]=False
+                        st.session_state[f"sp_cid_{sheet_row}"]=conf_id
+                        st.cache_data.clear(); st.rerun()
+                    elif sub:
+                        st.warning("Please enter both name and email.")
+                else:
+                    st.button("I'm interested in this slot", key=f"sp_btn_{sheet_row}",
+                              on_click=lambda k=key_open: st.session_state.update({k:True}),
+                              type="primary", use_container_width=True)
     else:
         st.info("No open slots found. Check back soon.")
 
@@ -371,8 +391,8 @@ with tab_resources:
         c1,c2,c3=st.columns(3,gap="large")
         with c1:
             st.markdown("""<div class="info-card"><h4>Logo Files</h4>
-            <p><a href="https://www.snowflake.com/wp-content/themes/snowflake/assets/img/brand-guidelines/snowflake-logo-blue.png" target="_blank" style="color:#29B5E8;">Logo (blue, PNG)</a><br>
-            <a href="https://www.snowflake.com/wp-content/themes/snowflake/assets/img/brand-guidelines/snowflake-logo-white.png" target="_blank" style="color:#29B5E8;">Logo (white, PNG)</a></p></div>""", unsafe_allow_html=True)
+            <p><a href="https://www.snowflake.com/en/company/newsroom/" target="_blank" style="color:#29B5E8;">Snowflake Press & Media Kit →</a><br>
+            <small style="color:#718096;">Official logos, brand assets, and approved imagery are in the Snowflake press kit.</small></p></div>""", unsafe_allow_html=True)
         with c2:
             st.markdown("""<div class="info-card"><h4>Brand Colors</h4>
             <p><strong>Snowflake Blue:</strong> <code>#29B5E8</code><br>
@@ -386,15 +406,21 @@ with tab_resources:
 
     with r_talk:
         st.markdown("#### Slide Templates")
+        st.info(
+            "Slide templates are shared with approved speakers via email. "
+            "Request yours by emailing **community@snowflake.com** with subject: "
+            "*Slide template request — [Your Name]*",
+            icon="📊",
+        )
         ca,cb=st.columns(2)
         with ca:
             st.markdown("""<div class="info-card"><h4>Standard Conference Template</h4>
-            <p>16:9 dark theme · title, about me, agenda, content, closing.<br>
-            <a href="https://docs.google.com/presentation/d/1Vc2H4tF0Ox9v7vK8Gm2K3E4rN1wqjYpLDskBH7mNUs/edit?usp=sharing" target="_blank" style="color:#29B5E8;">Open in Google Slides →</a></p></div>""", unsafe_allow_html=True)
+            <p>16:9 dark theme · title slide, about me, agenda, content slides, closing with QR code placeholder.<br>
+            <strong>Contact community@snowflake.com to request access.</strong></p></div>""", unsafe_allow_html=True)
         with cb:
             st.markdown("""<div class="info-card"><h4>Lightning Talk Template (15 min)</h4>
-            <p>8 slides max for fast-paced sessions.<br>
-            <a href="https://docs.google.com/presentation/d/1Vc2H4tF0Ox9v7vK8Gm2K3E4rN1wqjYpLDskBH7mNUs/edit?usp=sharing" target="_blank" style="color:#29B5E8;">Open in Google Slides →</a></p></div>""", unsafe_allow_html=True)
+            <p>8 slides max · optimised for fast-paced conference sessions and meetup lightning rounds.<br>
+            <strong>Contact community@snowflake.com to request access.</strong></p></div>""", unsafe_allow_html=True)
         st.markdown("**Bio format:** 50–100 words · role, company, speciality, community membership, LinkedIn URL")
 
     with r_prep:
