@@ -89,21 +89,23 @@ st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
 # ── FAQ ───────────────────────────────────────────────────────────────────────
 st.markdown("### Quick FAQ")
-c_l, c_r = st.columns(2, gap="large")
-with c_l:
-    with st.expander("Who can apply as a speaker?"):
-        st.markdown("Snowflake Data Superheroes, Squad members, Streamlit Creators, and independent practitioners with a genuine Snowflake or data story to tell.")
-    with st.expander("How long does the review take?"):
-        st.markdown("We aim to respond within 5 business days. Speakers can track status using their Confirmation ID in the Speaker Portal.")
-    with st.expander("What support does Snowflake provide?"):
-        st.markdown("Travel grants (economy flights + hotel), Snowflake swag kit, speaker coaching session, and co-promotion on Snowflake social channels.")
-with c_r:
-    with st.expander("I'm organizing an event. What do I get?"):
-        st.markdown("Access to our pool of vetted Snowflake community speakers. Once your event is approved, we handle speaker introductions and logistics support.")
-    with st.expander("Can I upload events in bulk?"):
-        st.markdown("Yes — the Vendor Portal supports bulk upload via CSV, Excel (.xlsx), or a Google Sheets URL.")
-    with st.expander("How does the Navan travel booking work?"):
-        st.markdown("Approved speakers with travel grants appear automatically in the Admin Portal's Navan tab with pre-written trip request emails for your travel coordinator.")
+faqs = [
+    ("Who can apply as a speaker?",
+     "Snowflake Data Superheroes, Squad members, Streamlit Creators, and independent practitioners with a genuine Snowflake or data story to tell."),
+    ("How long does the review take?",
+     "We aim to respond within 5 business days. Speakers can track status using their Confirmation ID in the Speaker Portal."),
+    ("What support does Snowflake provide?",
+     "Travel grants (economy flights + hotel), Snowflake swag kit, speaker coaching session, and co-promotion on Snowflake social channels."),
+    ("I'm organizing an event. What do I get?",
+     "Access to our pool of vetted Snowflake community speakers. Once your event is approved, we handle speaker introductions and logistics support."),
+    ("Can I upload events in bulk?",
+     "Yes — the Vendor Portal supports bulk upload via CSV, Excel (.xlsx), or a Google Sheets URL."),
+    ("How does the Navan travel booking work?",
+     "Approved speakers with travel grants appear automatically in the Navan Travel Portal with pre-written trip request emails and a batch CSV export for your travel coordinator."),
+]
+for q, a in faqs:
+    with st.expander(q):
+        st.markdown(a)
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 st.markdown("""
