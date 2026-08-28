@@ -7,7 +7,7 @@ from utils.styles import inject_css
 from utils.sheets import read_tab
 
 st.set_page_config(
-    page_title="Snowflake Community Voices",
+    page_title="Homepage — Community Voices",
     page_icon="❄️",
     layout="wide",
     initial_sidebar_state="expanded",
