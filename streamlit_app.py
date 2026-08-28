@@ -36,7 +36,7 @@ with col_spk:
                 border-radius:16px;padding:28px 22px;text-align:center;min-height:260px;">
       <div style="font-size:2rem;margin-bottom:10px;">🎤</div>
       <h3 style="color:#1A365D;font-size:1.2rem;margin-bottom:8px;">Speaker Portal</h3>
-      <p style="color:#2D4A6B;font-size:0.88rem;">Browse events, apply, check status, resources, travel details, Uber requests.</p>
+      <p style="color:#2D4A6B;font-size:0.88rem;">Browse speaking slots, book travel, explore upcoming events, access resources, and generate feedback QR codes.</p>
     </div>
     """, unsafe_allow_html=True)
     st.page_link("pages/1_Speaker_Portal.py", label="Speaker Portal →", icon="🎤")
