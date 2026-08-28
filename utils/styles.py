@@ -3,10 +3,34 @@ GLOBAL_CSS = """
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-  html, body, [class*="st-"], .stTextInput input, .stSelectbox, .stMultiSelect,
+  /* Apply Inter to explicit elements — deliberately excludes [class*="st-"]
+     so Streamlit's own CSS (Material Symbols for icons) is never overridden */
+  html, body,
+  .stTextInput input, .stSelectbox select, .stMultiSelect,
   .stTextArea textarea, .stNumberInput input, .stRadio label, .stSlider,
-  button, label, p, h1, h2, h3, span, div {
+  button, label, p, h1, h2, h3, h4, h5, h6,
+  .stMarkdown, .stAlert, .stCaption,
+  [data-testid="stMarkdownContainer"],
+  [data-testid="stText"] {
     font-family: 'Inter', sans-serif !important;
+  }
+
+  /* Restore Material Symbols / Icons font for Streamlit icon spans.
+     High specificity (0,1,3) beats the [class*="st-"] rule (0,1,0)
+     when both have !important. */
+  details > summary > span[class*="st-"],
+  details > summary span[class*="st-emotion"] {
+    font-family: "Material Symbols Rounded", "Material Icons" !important;
+    font-style: normal;
+    font-weight: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
   }
 
   [data-testid="collapsedControl"] { display: none; }
