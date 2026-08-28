@@ -24,15 +24,9 @@ params = st.query_params
 _speaker_param = params.get("speaker", "")
 _event_param   = params.get("event", "")
 _talk_param    = params.get("talk", "")
-_prefill_event_id      = params.get("event_id", "")
-_prefill_event_name    = params.get("event_name", "")
-_prefill_event_city    = params.get("event_city", "")
-_prefill_event_country = params.get("event_country", "")
-_prefill_event_start   = params.get("event_start", "")
 
 # If audience feedback params present → show feedback tab by default
 _audience_mode = bool(_speaker_param and _event_param and _talk_param)
-_apply_mode    = bool(_prefill_event_name)
 
 SLOTS_SHEET_ID = "1IgTYK8vV-AhDI3HuYB3KEjN8knRjY66LAOIWF0QT5II"
 
@@ -41,30 +35,26 @@ st.markdown("""
   <div class="eyebrow">Speaker Portal</div>
   <h1>Your Community Voices hub</h1>
   <p>
-    Browse open speaking slots, submit your application, check your status,
-    access resources, and generate talk feedback QR codes — all in one place.
+    Browse open speaking slots, sign up for events, access speaker resources,
+    book your travel, and generate talk feedback QR codes — all in one place.
   </p>
 </div>
 """, unsafe_allow_html=True)
 
-# ── Tab order — put Feedback first if audience QR mode, Apply first if applying ─
+# ── Tab order — put Feedback first if audience QR mode ─────────────────────────
 if _audience_mode:
-    TAB_NAMES = ["⭐ Talk Feedback", "📅 Browse Events", "📝 Apply", "🔍 My Status", "📦 Resources", "✈️ My Travel", "🚗 Uber Request"]
-elif _apply_mode:
-    TAB_NAMES = ["📝 Apply", "📅 Browse Events", "🔍 My Status", "📦 Resources", "⭐ Talk Feedback", "✈️ My Travel", "🚗 Uber Request"]
+    TAB_NAMES = ["⭐ Talk Feedback", "📅 Browse Events", "📦 Resources", "✈️ Book Your Travel", "🚗 Uber Request"]
 else:
-    TAB_NAMES = ["📅 Browse Events", "📝 Apply", "🔍 My Status", "📦 Resources", "⭐ Talk Feedback", "✈️ My Travel", "🚗 Uber Request"]
+    TAB_NAMES = ["📅 Browse Events", "📦 Resources", "⭐ Talk Feedback", "✈️ Book Your Travel", "🚗 Uber Request"]
 
 tabs = st.tabs(TAB_NAMES)
 
 # Map names to tab objects
-tab_map = dict(zip(TAB_NAMES, tabs))
+tab_map      = dict(zip(TAB_NAMES, tabs))
 tab_browse   = tab_map.get("📅 Browse Events")
-tab_apply    = tab_map.get("📝 Apply")
-tab_status   = tab_map.get("🔍 My Status")
 tab_resources= tab_map.get("📦 Resources")
 tab_feedback = tab_map.get("⭐ Talk Feedback")
-tab_travel   = tab_map.get("✈️ My Travel")
+tab_travel   = tab_map.get("✈️ Book Your Travel")
 tab_uber     = tab_map.get("🚗 Uber Request")
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -174,7 +164,7 @@ with tab_browse:
 
         st.markdown("---")
         st.markdown("#### Sign up for a slot")
-        st.caption("Expand a row to register your interest. You\'ll receive a Confirmation ID by email.")
+        st.caption("Expand a row to register your interest. You'll receive a Confirmation ID by email.")
 
         for _, slot in filtered.iterrows():
             city=slot["City"]; ev_date=slot["Date"]; region=slot["Region"]
@@ -227,159 +217,6 @@ with tab_browse:
         st.info("No open slots found. Check back soon.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB: APPLY
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_apply:
-    if st.session_state.get("sp_applied"):
-        cid = st.session_state.get("sp_conf_id","")
-        st.markdown(f"""
-        <div class="success-box"><h2>Application submitted!</h2>
-        <p>Save your Confirmation ID — use it on the My Status tab to track progress.</p></div>
-        <div class="id-box" style="margin-top:24px;"><div class="label">Confirmation ID</div>
-        <div class="id">{cid}</div></div>""", unsafe_allow_html=True)
-        if st.button("Submit another", key="sp_another"):
-            st.session_state.pop("sp_applied",None); st.session_state.pop("sp_conf_id",None); st.rerun()
-        st.stop()
-
-    if _prefill_event_name:
-        st.success(f"Applying for **{_prefill_event_name}** in {_prefill_event_city}, {_prefill_event_country}. Event details pre-filled below.", icon="📅")
-
-    st.markdown('<div class="step-label">Section 1 of 5</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">About You</div>', unsafe_allow_html=True)
-    c1,c2=st.columns(2)
-    with c1: fname=st.text_input("First name *", placeholder="Ada", key="sp_fname")
-    with c2: lname=st.text_input("Last name *", placeholder="Lovelace", key="sp_lname")
-    c3,c4=st.columns(2)
-    with c3: email=st.text_input("Email address *", placeholder="ada@example.com", key="sp_email")
-    with c4: job=st.text_input("Job title *", placeholder="Senior Data Engineer", key="sp_job")
-    c5,c6=st.columns(2)
-    with c5: company=st.text_input("Company", key="sp_company")
-    with c6: linkedin=st.text_input("LinkedIn URL", placeholder="https://linkedin.com/in/...", key="sp_linkedin")
-    c7,c8=st.columns(2)
-    with c7: country=st.text_input("Country *", key="sp_country")
-    with c8: city=st.text_input("City", key="sp_city")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    st.markdown('<div class="step-label">Section 2 of 5</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Community Identity</div>', unsafe_allow_html=True)
-    community=st.selectbox("Community role *",["Select...","Data Superhero","Snowflake Squad Member","Streamlit Creator","Open Source Contributor","Independent Practitioner / Builder","Other"], key="sp_community")
-    years=st.select_slider("Years with Snowflake",["< 1 year","1 year","2 years","3 years","4 years","5+ years"],value="2 years",key="sp_years")
-    bio=st.text_area("Short bio (2–4 sentences) *", height=90, key="sp_bio")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    st.markdown('<div class="step-label">Section 3 of 5</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">The Event</div>', unsafe_allow_html=True)
-    ev_name=st.text_input("Event name *", value=_prefill_event_name, placeholder="Data + AI Summit, PyData Global...", key="sp_evname")
-    ev_website=st.text_input("Event website", key="sp_evweb")
-    c9,c10=st.columns(2)
-    with c9:
-        _sv = date.today()
-        if _prefill_event_start:
-            try:
-                from datetime import datetime as _dt
-                _sv = _dt.strptime(_prefill_event_start[:10],"%Y-%m-%d").date()
-                if _sv < date.today(): _sv = date.today()
-            except Exception: pass
-        ev_start=st.date_input("Event start date *", value=_sv, min_value=date.today(), key="sp_evstart")
-    with c10: ev_end=st.date_input("Event end date", min_value=date.today(), key="sp_evend")
-    c11,c12=st.columns(2)
-    with c11: ev_city=st.text_input("Event city *", value=_prefill_event_city, key="sp_evcity")
-    with c12: ev_country=st.text_input("Event country *", value=_prefill_event_country, key="sp_evcountry")
-    ev_type=st.selectbox("Event type *",["Select...","In-person conference","Hybrid conference","Virtual conference","Community meetup (in-person)","Community meetup (virtual)","University / academic talk","Other"], key="sp_evtype")
-    ev_audience=st.select_slider("Expected audience",["< 50","50–200","200–500","500–1,000","1,000–5,000","5,000+"],value="200–500",key="sp_audience")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    st.markdown('<div class="step-label">Section 4 of 5</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Your Talk</div>', unsafe_allow_html=True)
-    talk_title=st.text_input("Talk title *", key="sp_talktitle")
-    talk_abstract=st.text_area("Abstract (2–5 sentences) *", height=100, key="sp_abstract")
-    c13,c14=st.columns(2)
-    with c13: session_type=st.selectbox("Format *",["Select...","Conference talk (30–45 min)","Lightning talk (5–15 min)","Workshop","Panel","Keynote","Demo"], key="sp_format")
-    with c14: aud_level=st.selectbox("Technical level",["Select...","Beginner","Intermediate","Advanced","Mixed"], key="sp_level")
-    topics=st.multiselect("Snowflake topics",["Data Engineering / Pipelines","Snowpark / Python","Cortex AI / LLMs","Streamlit","Data Sharing","Cost Optimization","ML / MLOps","Iceberg","Dynamic Tables","Other"], key="sp_topics")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    st.markdown('<div class="step-label">Section 5 of 5</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Support Request</div>', unsafe_allow_html=True)
-    support=st.multiselect("Support types *",["Travel grant (flights)","Hotel / accommodation","Conference registration fee","Snowflake swag kit","Speaker coaching session","Co-promotion on Snowflake channels","Speaker certification badge","No support needed"], key="sp_support")
-    fly_from=st.text_input("Traveling from", placeholder="London, UK", key="sp_flyfrom")
-    cost=st.number_input("Estimated travel cost (USD)", min_value=0, max_value=10000, step=50, value=0, key="sp_cost")
-    notes=st.text_area("Additional notes", height=80, key="sp_notes")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    ok = all([fname,lname,email,job,country,community!="Select...",bio,ev_name,ev_city,ev_country,
-              ev_type!="Select...",talk_title,talk_abstract,session_type!="Select...",support])
-    if not ok: st.caption("Complete all required fields to submit.")
-    if st.button("Submit Application", type="primary", use_container_width=True, disabled=not ok, key="sp_submit"):
-        conf_id=generate_confirmation_id()
-        now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        row=[conf_id,now,"Pending",fname,lname,email,job,company or "",linkedin or "",country,city or "",
-             community,years,bio,ev_name,ev_website or "",str(ev_start),str(ev_end),ev_city,ev_country,
-             ev_type,ev_audience,talk_title,talk_abstract,session_type,
-             aud_level if aud_level!="Select..." else "","", ", ".join(topics),
-             ", ".join(support),fly_from or "",str(cost),notes or "","",_prefill_event_id]
-        if append_row("Speaker_Applications",row):
-            st.session_state["sp_applied"]=True; st.session_state["sp_conf_id"]=conf_id; st.rerun()
-        else:
-            st.error("Submission failed. Please try again or email community@snowflake.com.")
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB: MY STATUS
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_status:
-    st.markdown("### Check your application status")
-    st.markdown("Enter the email and Confirmation ID from your application.")
-    with st.form("sp_status_form"):
-        s_email=st.text_input("Email address", key="sp_s_email")
-        s_cid=st.text_input("Confirmation ID", placeholder="CV-2026-XXXXXXXX", key="sp_s_cid").strip().upper()
-        s_submit=st.form_submit_button("Check Status", type="primary", use_container_width=True)
-
-    if s_submit:
-        if not s_email or not s_cid:
-            st.warning("Please enter both your email and Confirmation ID.")
-        else:
-            with st.spinner("Looking up..."):
-                try:
-                    df=read_tab("Speaker_Applications")
-                except Exception as ex:
-                    st.error(f"Could not reach database: {ex}"); st.stop()
-            if df.empty or "confirmation_id" not in df.columns:
-                st.info("No applications found."); st.stop()
-            match=df[(df["confirmation_id"].str.strip().str.upper()==s_cid) &
-                     (df["email"].str.strip().str.lower()==s_email.strip().lower())]
-            if match.empty:
-                st.error("No application found with that email and ID. Double-check both.")
-            else:
-                r=match.iloc[0]
-                status=r.get("status","Pending")
-                STATUS_STYLES={"Pending":("status-pending","⏳ Under Review"),
-                               "Approved":("status-approved","✅ Approved"),
-                               "Waitlisted":("status-waitlisted","📋 Waitlisted"),
-                               "Not a Fit":("status-not-a-fit","❌ Not a Fit")}
-                bcls, blbl = STATUS_STYLES.get(status,("status-pending",status))
-                st.markdown(f"""
-                <div class="info-card" style="border-color:#29B5E8;">
-                  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-                    <span class="status-badge {bcls}">{blbl}</span>
-                    <span style="font-size:0.85rem;color:#718096;">ID: <strong>{r.get('confirmation_id','')}</strong></span>
-                  </div>
-                  <h4>{r.get('talk_title','Your Talk')}</h4>
-                  <p>{r.get('event_name','')} · {r.get('event_city','')}, {r.get('event_country','')}</p>
-                  <p style="color:#718096;font-size:0.82rem;">Submitted: {r.get('submitted_at','')}</p>
-                </div>""", unsafe_allow_html=True)
-                if status=="Approved":
-                    st.success("Your application is approved! Check your email for next steps.", icon="✅")
-                elif status=="Pending":
-                    st.info("Under review — we aim to respond within 5 business days.", icon="⏳")
-                elif status=="Waitlisted":
-                    st.warning("You're on the waitlist. We'll reach out if a spot opens.", icon="📋")
-                elif status=="Not a Fit":
-                    st.error("Not a match for this cycle — feel free to apply for a future event.", icon="❌")
-                admin_note=r.get("admin_notes","")
-                if admin_note and str(admin_note).strip():
-                    st.info(f"Note from the team: {admin_note}")
-
-# ══════════════════════════════════════════════════════════════════════════════
 # TAB: RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_resources:
@@ -425,10 +262,10 @@ with tab_resources:
 
     with r_prep:
         for phase, items in [
-            ("6–8 weeks before",["Submit Community Voices application","Confirm session length and A/V with organizers","Register for event (program may cover ticket)"]),
+            ("6–8 weeks before",["Submit interest from the Browse Events tab","Confirm session length and A/V with organizers","Register for event (program may cover ticket)"]),
             ("3–4 weeks before",["Draft slides using Snowflake template","Full rehearsal end-to-end","Submit bio and headshot","Generate feedback QR code (Talk Feedback tab)"]),
             ("Day of",["Arrive 30 min early — test A/V and clicker","QR code on last slide","Stay for Q&A"]),
-            ("After",["Share slides publicly","Post on social — tag @Snowflake + #SnowflakeCommunity","Review feedback scores on My Status tab"]),
+            ("After",["Share slides publicly","Post on social — tag @Snowflake + #SnowflakeCommunity","Review feedback scores from Talk Feedback tab"]),
         ]:
             with st.expander(phase):
                 for item in items: st.markdown(f"☐ {item}")
@@ -436,10 +273,10 @@ with tab_resources:
 
     with r_faq:
         for q, a in [
-            ("How long does review take?","We aim to respond within 5 business days. Use My Status to track."),
-            ("What support can I receive?","Travel grant, hotel, event registration, swag kit, speaker coaching, co-promotion on Snowflake social."),
-            ("Can I apply for an event that already happened?","No — applications must be submitted before the event date."),
-            ("Can I apply for multiple events?","Yes — submit a separate application for each. Each gets its own Confirmation ID."),
+            ("How do I sign up to speak?","Browse open slots on the Browse Events tab and click 'I'm interested in this slot'. You'll receive a Confirmation ID — keep it for travel booking and Uber requests."),
+            ("What support can I receive?","Travel booking via Navan, hotel, event registration, swag kit, speaker coaching, and co-promotion on Snowflake social channels."),
+            ("How do I book my travel?","Use the Book Your Travel tab. Enter your Confirmation ID and fill in the booking request form. Navan will arrange flights and hotel within 2 business days."),
+            ("Can I sign up for multiple events?","Yes — submit a separate sign-up for each. Each gets its own Confirmation ID."),
             ("Do I need approval for slide content?","No pre-approval needed, but follow brand guidelines and don't discuss roadmap or pricing."),
         ]:
             with st.expander(q): st.markdown(a)
@@ -517,28 +354,28 @@ with tab_feedback:
                 st.error("Run: pip install qrcode[pil] Pillow")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB: MY TRAVEL — upload flight/hotel details
+# TAB: BOOK YOUR TRAVEL
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_travel:
-    st.markdown("### Submit your travel details")
+    st.markdown("### Book your travel")
     st.markdown(
-        "Once your travel is booked (by you or Navan), submit your flight and hotel details here. "
-        "This helps the program team track logistics and appears in the Navan portal for confirmation."
+        "Fill in this form and our travel partner **Navan** will book your flights and hotel. "
+        "You'll receive your confirmed itinerary by email within **2 business days**."
     )
 
     if st.session_state.get("sp_travel_done"):
-        st.markdown('<div class="success-box"><h2>Travel details saved!</h2><p>The program team can now see your itinerary in the Navan portal.</p></div>', unsafe_allow_html=True)
-        if st.button("Update my travel details", key="sp_travel_reset"):
+        st.markdown('<div class="success-box"><h2>Travel request received!</h2><p>Navan will arrange your flights and hotel and send your itinerary within 2 business days.</p></div>', unsafe_allow_html=True)
+        if st.button("Submit another travel request", key="sp_travel_reset"):
             st.session_state.pop("sp_travel_done", None); st.rerun()
         st.stop()
 
-    st.markdown("**Verify your identity first**")
+    st.markdown("**Verify your identity**")
+    st.caption("Enter the email and Confirmation ID you received when you signed up for a speaking slot.")
     tv1, tv2 = st.columns(2)
     with tv1: tv_email = st.text_input("Your email", key="tv_email")
     with tv2: tv_cid   = st.text_input("Confirmation ID", placeholder="CV-2026-XXXXXXXX", key="tv_cid")
 
     if tv_email and tv_cid:
-        # Verify speaker exists and is approved
         try:
             df_verify = read_tab("Speaker_Applications")
         except Exception:
@@ -552,9 +389,9 @@ with tab_travel:
             ]
 
         if match.empty:
-            st.warning("No matching application found. Double-check your email and Confirmation ID.")
+            st.warning("No matching sign-up found. Double-check your email and Confirmation ID.")
         else:
-            spk_row = match.iloc[0]
+            spk_row  = match.iloc[0]
             ev_name  = spk_row.get("event_name", "")
             ev_city  = spk_row.get("event_city", "")
             ev_date  = spk_row.get("event_date_start", "")
@@ -563,45 +400,185 @@ with tab_travel:
             st.success(f"Verified: **{spk_name}** — {ev_name} in {ev_city}")
             st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-            st.markdown("#### Outbound flight")
-            tf1, tf2 = st.columns(2)
-            with tf1: airline   = st.text_input("Airline", placeholder="Delta, British Airways...", key="tv_airline")
-            with tf2: flight_no = st.text_input("Flight number", placeholder="DL1234", key="tv_fno")
-            tf3, tf4 = st.columns(2)
-            with tf3: dep_city  = st.text_input("Departing from", placeholder="London LHR", key="tv_dep")
-            with tf4: dep_dt    = st.text_input("Departure date & time", placeholder="2026-09-10 08:30", key="tv_depdt")
-            tf5, tf6 = st.columns(2)
-            with tf5: arr_city  = st.text_input("Arriving at", placeholder="Berlin TXL", key="tv_arr")
-            with tf6: arr_dt    = st.text_input("Arrival date & time", placeholder="2026-09-10 11:45", key="tv_arrdt")
+            # ── Section 1: Personal details ───────────────────────────────────
+            st.markdown('<div class="step-label">Section 1 of 4</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Personal details</div>', unsafe_allow_html=True)
+            pd1, pd2 = st.columns(2)
+            with pd1:
+                passport_name = st.text_input(
+                    "Full name as on passport *",
+                    value=spk_name,
+                    placeholder="Ada Lovelace",
+                    key="tv_passport_name",
+                )
+            with pd2:
+                dob = st.text_input(
+                    "Date of birth (DD/MM/YYYY) *",
+                    placeholder="15/03/1990",
+                    key="tv_dob",
+                )
+            pd3, pd4 = st.columns(2)
+            with pd3:
+                passport_no = st.text_input(
+                    "Passport number",
+                    placeholder="AB1234567",
+                    key="tv_passport_no",
+                )
+            with pd4:
+                passport_exp = st.text_input(
+                    "Passport expiry date",
+                    placeholder="2029-06-30",
+                    key="tv_passport_exp",
+                )
+            pd5, pd6 = st.columns(2)
+            with pd5:
+                nationality = st.text_input("Nationality / citizenship", key="tv_nationality")
+            with pd6:
+                phone = st.text_input(
+                    "Mobile number (with country code)",
+                    placeholder="+1 415 000 0000",
+                    key="tv_phone",
+                )
+            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-            st.markdown("#### Return flight")
-            tr1, tr2 = st.columns(2)
-            with tr1: ret_fno   = st.text_input("Return flight number", placeholder="DL5678", key="tv_rfno")
-            with tr2: ret_dep   = st.text_input("Return departure date & time", placeholder="2026-09-11 14:00", key="tv_rdep")
-            ret_arr = st.text_input("Return arrival date & time", placeholder="2026-09-11 16:30", key="tv_rarr")
+            # ── Section 2: Flights ────────────────────────────────────────────
+            st.markdown('<div class="step-label">Section 2 of 4</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Flight preferences</div>', unsafe_allow_html=True)
+            st.caption(f"Event: **{ev_name}** · {ev_city} · {ev_date}")
 
-            st.markdown("#### Hotel")
-            th1, th2 = st.columns(2)
-            with th1: hotel_name    = st.text_input("Hotel name", key="tv_hotel")
-            with th2: hotel_address = st.text_input("Hotel address", key="tv_hadd")
-            th3, th4 = st.columns(2)
-            with th3: hotel_in  = st.text_input("Check-in date", placeholder="2026-09-09", key="tv_cin")
-            with th4: hotel_out = st.text_input("Check-out date", placeholder="2026-09-12", key="tv_cout")
+            fl1, fl2 = st.columns(2)
+            with fl1:
+                fly_from = st.text_input(
+                    "Departing from (city / airport) *",
+                    placeholder="London Heathrow (LHR)",
+                    key="tv_fly_from",
+                )
+            with fl2:
+                fly_to = st.text_input(
+                    "Flying to (city / airport) *",
+                    value=ev_city,
+                    key="tv_fly_to",
+                )
+            fl3, fl4 = st.columns(2)
+            with fl3:
+                outbound_date = st.text_input(
+                    "Outbound travel date *",
+                    placeholder="2026-09-09",
+                    key="tv_outbound",
+                )
+            with fl4:
+                return_date = st.text_input(
+                    "Return travel date *",
+                    placeholder="2026-09-12",
+                    key="tv_return",
+                )
+            fl5, fl6 = st.columns(2)
+            with fl5:
+                seat_class = st.selectbox(
+                    "Preferred seat class",
+                    ["Economy", "Premium Economy", "Business"],
+                    key="tv_class",
+                )
+            with fl6:
+                airline_pref = st.text_input(
+                    "Preferred airline (if any)",
+                    placeholder="Delta, United, BA...",
+                    key="tv_airline_pref",
+                )
+            ff_number = st.text_input(
+                "Frequent flyer number(s)",
+                placeholder="DL 123456789, UA 987654321",
+                key="tv_ff",
+            )
+            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-            total_cost = st.number_input("Total travel cost (USD)", min_value=0, max_value=20000, step=50, key="tv_cost")
-            tv_notes   = st.text_area("Anything else for the travel team?", height=70, key="tv_notes")
+            # ── Section 3: Hotel ──────────────────────────────────────────────
+            st.markdown('<div class="step-label">Section 3 of 4</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Hotel preferences</div>', unsafe_allow_html=True)
+            ht1, ht2 = st.columns(2)
+            with ht1:
+                hotel_checkin = st.text_input(
+                    "Check-in date *",
+                    placeholder="2026-09-09",
+                    key="tv_hotel_in",
+                )
+            with ht2:
+                hotel_checkout = st.text_input(
+                    "Check-out date *",
+                    placeholder="2026-09-12",
+                    key="tv_hotel_out",
+                )
+            hotel_pref = st.selectbox(
+                "Hotel preference",
+                ["Near the event venue", "Near the city centre / downtown", "No preference"],
+                key="tv_hotel_pref",
+            )
+            hotel_loyalty = st.text_input(
+                "Hotel loyalty number(s)",
+                placeholder="Marriott Bonvoy 123456, Hilton Honors 654321",
+                key="tv_hotel_loyalty",
+            )
+            hotel_notes = st.text_input(
+                "Any specific hotel requirements?",
+                placeholder="Non-smoking, high floor, accessible room...",
+                key="tv_hotel_notes",
+            )
+            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-            if st.button("Submit Travel Details", type="primary", use_container_width=True, key="tv_submit"):
+            # ── Section 4: Additional info ─────────────────────────────────────
+            st.markdown('<div class="step-label">Section 4 of 4</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">Additional information</div>', unsafe_allow_html=True)
+            dietary = st.text_input(
+                "Dietary requirements",
+                placeholder="Vegetarian, gluten-free, nut allergy...",
+                key="tv_dietary",
+            )
+            emergency_name = st.text_input(
+                "Emergency contact name",
+                placeholder="Jane Lovelace",
+                key="tv_emerg_name",
+            )
+            emergency_phone = st.text_input(
+                "Emergency contact phone",
+                placeholder="+1 415 000 0001",
+                key="tv_emerg_phone",
+            )
+            tv_notes = st.text_area(
+                "Anything else Navan should know?",
+                height=80,
+                placeholder="Visa required, connecting through a hub city, arriving a day early...",
+                key="tv_notes",
+            )
+
+            st.info(
+                "Navan will book economy class by default unless business class is requested and approved. "
+                "Requests are processed within 2 business days — you'll receive your itinerary directly by email.",
+                icon="✈️",
+            )
+
+            required_ok = all([passport_name, dob, fly_from, fly_to, outbound_date, return_date, hotel_checkin, hotel_checkout])
+            if not required_ok:
+                st.caption("Complete all required fields (*) to submit.")
+
+            if st.button("Submit Travel Request", type="primary", use_container_width=True,
+                         disabled=not required_ok, key="tv_submit"):
                 import uuid
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 row = [
                     str(uuid.uuid4())[:8].upper(), now,
                     tv_cid.strip().upper(), spk_name, tv_email.strip(),
                     ev_name, ev_city, ev_date,
-                    airline, flight_no, dep_city, dep_dt, arr_city, arr_dt,
-                    ret_fno, ret_dep, ret_arr,
-                    hotel_name, hotel_address, hotel_in, hotel_out,
-                    str(total_cost), "Pending Booking", tv_notes or "",
+                    # Personal details
+                    passport_name, dob, passport_no, passport_exp, nationality, phone,
+                    # Flights
+                    fly_from, fly_to, outbound_date, return_date, seat_class,
+                    airline_pref or "", ff_number or "",
+                    # Hotel
+                    hotel_checkin, hotel_checkout, hotel_pref,
+                    hotel_loyalty or "", hotel_notes or "",
+                    # Additional
+                    dietary or "", emergency_name or "", emergency_phone or "",
+                    tv_notes or "", "Pending Booking",
                 ]
                 if append_row("Travel_Details", row):
                     st.session_state["sp_travel_done"] = True; st.rerun()
@@ -643,7 +620,7 @@ with tab_uber:
         if match_u.empty:
             st.warning("No matching application found.")
         elif match_u.iloc[0].get("status","") != "Approved":
-            st.warning("Uber requests are available to **Approved** speakers only. Check your status on the My Status tab.")
+            st.warning("Uber requests are available to **Approved** speakers only. Contact community@snowflake.com if you believe this is an error.")
         else:
             spk_u = match_u.iloc[0]
             spk_name_u = f"{spk_u.get('first_name','')} {spk_u.get('last_name','')}".strip()
