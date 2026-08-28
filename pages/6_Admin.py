@@ -2,10 +2,13 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from datetime import datetime, date, timedelta
+from io import StringIO
 import streamlit as st
 import pandas as pd
+import requests
 from utils.styles import inject_css
-from utils.sheets import read_tab, update_cell, append_row, col_letter
+from utils.sheets import read_tab, update_cell, append_row, col_letter, get_access_token
+from utils.confirmation import generate_confirmation_id
 
 st.set_page_config(
     page_title="Admin — Community Voices",
@@ -86,13 +89,14 @@ if st.button("Refresh data", key="refresh"):
     st.rerun()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms = st.tabs([
+tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms, tab_upload = st.tabs([
     "Applications Queue",
     "Vendor Events",
     "Speaker-Event Matches",
     "Q3 Progress",
     "Talk Feedback",
     "Comms Generator",
+    "Bulk Upload",
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -104,6 +108,26 @@ with tab_apps:
     if df_apps.empty:
         st.info("No applications yet. They'll appear here once submitted.")
     else:
+        # ── New signups notification ───────────────────────────────────────────
+        if "submitted_at" in df_apps.columns:
+            try:
+                cutoff = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+                new_signups = df_apps[
+                    (df_apps["submitted_at"] >= cutoff) &
+                    (df_apps.get("status", pd.Series(dtype=str)) == "Pending")
+                ]
+                if not new_signups.empty:
+                    names = ", ".join(
+                        f"{r.get('first_name','')} {r.get('last_name','')}".strip()
+                        for _, r in new_signups.iterrows()
+                    )
+                    st.warning(
+                        f"**{len(new_signups)} new application(s) in the last 24 hours:** {names}",
+                        icon="🔔",
+                    )
+            except Exception:
+                pass
+
         # ── Filter bar ────────────────────────────────────────────────────────
         col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
         with col_f1:
@@ -576,3 +600,180 @@ Community Voices Program Manager
 Snowflake | community@snowflake.com
 """
             st.text_area("Rejection draft", value=rej_draft, height=300, key="rej_draft_text")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 7: Bulk Upload (Admin — events and speaker applications)
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_upload:
+    st.markdown("### Bulk upload events or speaker applications")
+    st.markdown(
+        "Upload a **CSV**, **Excel (.xlsx)**, or paste a **Google Sheets URL**. "
+        "Choose whether you're uploading **Events** (from vendors) or **Speaker Applications**."
+    )
+
+    upload_type = st.radio(
+        "What are you uploading?",
+        ["Events (from vendors)", "Speaker Applications"],
+        horizontal=True,
+        key="admin_upload_type",
+    )
+
+    TEMPLATE_EVENTS = [
+        "organizer_name", "organizer_email", "organizer_org", "organizer_role",
+        "event_name", "event_website", "event_start", "event_end",
+        "event_city", "event_country", "event_format", "expected_audience",
+        "community_alignment", "event_description",
+        "speaker_topic", "topic_tags", "session_format", "cfp_link", "cfp_deadline",
+        "additional_notes",
+    ]
+    TEMPLATE_SPEAKERS = [
+        "first_name", "last_name", "email", "job_title", "company", "country", "city",
+        "community_identity", "bio",
+        "event_name", "event_city", "event_country", "event_date_start",
+        "talk_title", "talk_abstract", "session_type",
+        "support_types", "estimated_cost",
+    ]
+
+    cols_for_template = TEMPLATE_EVENTS if "Events" in upload_type else TEMPLATE_SPEAKERS
+    template_csv = pd.DataFrame(columns=cols_for_template).to_csv(index=False)
+    st.download_button(
+        f"Download {'Events' if 'Events' in upload_type else 'Speaker Applications'} CSV template",
+        data=template_csv,
+        file_name=f"cv_{'events' if 'Events' in upload_type else 'speakers'}_template.csv",
+        mime="text/csv",
+        key="admin_template_dl",
+    )
+
+    st.markdown("---")
+    admin_upload_method = st.radio(
+        "Upload method",
+        ["Upload CSV or Excel file", "Paste Google Sheets URL"],
+        horizontal=True,
+        key="admin_upload_method",
+    )
+
+    df_admin_upload = None
+
+    if admin_upload_method == "Upload CSV or Excel file":
+        admin_file = st.file_uploader(
+            "Choose file",
+            type=["csv", "xlsx", "xls"],
+            key="admin_file_upload",
+        )
+        if admin_file:
+            try:
+                if admin_file.name.endswith(".csv"):
+                    df_admin_upload = pd.read_csv(admin_file, dtype=str).fillna("")
+                else:
+                    df_admin_upload = pd.read_excel(admin_file, dtype=str).fillna("")
+                st.success(f"Loaded {len(df_admin_upload)} row(s) from **{admin_file.name}**")
+            except Exception as e:
+                st.error(f"Could not parse file: {e}")
+    else:
+        admin_gs_url = st.text_input(
+            "Google Sheets URL",
+            placeholder="https://docs.google.com/spreadsheets/d/...",
+            key="admin_gs_url",
+        )
+        if admin_gs_url and st.button("Load Sheet", key="admin_load_gs"):
+            import re
+            match = re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)", admin_gs_url)
+            if not match:
+                st.error("Could not extract spreadsheet ID from that URL.")
+            else:
+                gs_id = match.group(1)
+                try:
+                    token = get_access_token()
+                    resp = requests.get(
+                        f"https://sheets.googleapis.com/v4/spreadsheets/{gs_id}/values/A1:ZZ10000",
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=15,
+                    )
+                    resp.raise_for_status()
+                    rows = resp.json().get("values", [])
+                    if rows and len(rows) >= 2:
+                        headers = rows[0]
+                        data = [r + [""] * (len(headers) - len(r)) for r in rows[1:]]
+                        df_admin_upload = pd.DataFrame(data, columns=headers).fillna("")
+                        st.success(f"Loaded {len(df_admin_upload)} row(s)")
+                    else:
+                        st.warning("Sheet is empty or header-only.")
+                except Exception as e:
+                    try:
+                        csv_url = f"https://docs.google.com/spreadsheets/d/{gs_id}/export?format=csv"
+                        r2 = requests.get(csv_url, timeout=15)
+                        r2.raise_for_status()
+                        from io import StringIO
+                        df_admin_upload = pd.read_csv(StringIO(r2.text), dtype=str).fillna("")
+                        st.success(f"Loaded {len(df_admin_upload)} row(s) via public export")
+                    except Exception as e2:
+                        st.error(f"Could not read sheet: {e2}")
+
+    if df_admin_upload is not None and not df_admin_upload.empty:
+        df_admin_upload.columns = [c.strip().lower().replace(" ", "_") for c in df_admin_upload.columns]
+        st.markdown("---")
+        st.markdown(f"**Preview — {len(df_admin_upload)} row(s)**")
+        st.dataframe(df_admin_upload, use_container_width=True, hide_index=True)
+
+        upload_status = st.selectbox(
+            "Set initial status for all rows",
+            ["Pending", "Approved"],
+            key="admin_upload_status",
+        )
+
+        if st.button("Submit All Rows", type="primary", key="admin_bulk_submit"):
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ok_count = 0
+            prog = st.progress(0)
+
+            if "Events" in upload_type:
+                for i, row in df_admin_upload.iterrows():
+                    eid = generate_confirmation_id().replace("CV-", "EV-")
+                    rid = generate_confirmation_id().replace("CV-", "SR-")
+                    event_row = [
+                        eid, now, upload_status,
+                        row.get("organizer_name",""), row.get("organizer_email",""),
+                        row.get("organizer_org", row.get("organization","")),
+                        row.get("organizer_role",""), row.get("org_website",""),
+                        row.get("event_name",""), row.get("event_website",""),
+                        row.get("event_start", row.get("event_date","")), row.get("event_end",""),
+                        row.get("event_city",""), row.get("event_country",""),
+                        row.get("event_format",""), row.get("expected_audience", row.get("audience_size","")),
+                        row.get("community_alignment",""), row.get("event_description", row.get("description","")),
+                        row.get("how_heard",""), row.get("additional_notes", row.get("notes","")), "",
+                    ]
+                    request_row = [
+                        rid, now, upload_status, eid, row.get("event_name",""),
+                        row.get("speaker_topic", row.get("topic","")), row.get("topic_tags",""),
+                        row.get("session_format",""), row.get("audience_level",""),
+                        row.get("cfp_link",""), row.get("cfp_deadline",""), "", "",
+                    ]
+                    if append_row("Events", event_row) and append_row("Speaker_Requests", request_row):
+                        ok_count += 1
+                    prog.progress((i + 1) / len(df_admin_upload))
+            else:
+                for i, row in df_admin_upload.iterrows():
+                    cid = generate_confirmation_id()
+                    spk_row = [
+                        cid, now, upload_status,
+                        row.get("first_name",""), row.get("last_name",""), row.get("email",""),
+                        row.get("job_title",""), row.get("company",""), row.get("linkedin",""),
+                        row.get("country",""), row.get("city",""),
+                        row.get("community_identity",""), row.get("years_snowflake",""), row.get("bio",""),
+                        row.get("event_name",""), row.get("event_website",""),
+                        row.get("event_date_start",""), row.get("event_date_end",""),
+                        row.get("event_city",""), row.get("event_country",""),
+                        row.get("event_type",""), row.get("audience_size",""),
+                        row.get("talk_title",""), row.get("talk_abstract",""),
+                        row.get("session_type",""), row.get("audience_level",""),
+                        row.get("snowflake_topics",""), row.get("support_types",""),
+                        row.get("traveling_from",""), row.get("estimated_cost","0"),
+                        row.get("additional_notes",""), "", "",
+                    ]
+                    if append_row("Speaker_Applications", spk_row):
+                        ok_count += 1
+                    prog.progress((i + 1) / len(df_admin_upload))
+
+            st.success(f"Submitted {ok_count} of {len(df_admin_upload)} row(s) successfully.")
+            st.cache_data.clear()
+

@@ -27,7 +27,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Primary CTAs ───────────────────────────────────────────────────────────────
-col_spk, col_vnd = st.columns(2, gap="large")
+col_spk, col_vnd, col_board = st.columns(3, gap="large")
 
 with col_spk:
     st.markdown("""
@@ -52,6 +52,18 @@ with col_vnd:
     </div>
     """, unsafe_allow_html=True)
     st.page_link("pages/3_Events.py", label="Register Your Event", icon="➡️")
+
+with col_board:
+    st.markdown("""
+    <div class="info-card" style="border: 2px solid #38A169; background: linear-gradient(135deg, #F0FFF4, #E6FFFA);">
+      <h4 style="font-size: 1.25rem; color: #276749;">📅 Browse open events</h4>
+      <p style="font-size: 0.95rem; color: #2D3748; margin-bottom: 0;">
+        See all events actively looking for Snowflake community speakers —
+        browse, filter, and apply directly from the board.
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.page_link("pages/7_Browse_Events.py", label="Browse Open Events", icon="➡️")
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 

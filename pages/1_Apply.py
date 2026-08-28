@@ -47,6 +47,21 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ── Pre-fill from Events Board URL params ──────────────────────────────────────
+_params = st.query_params
+_prefill_event_id      = _params.get("event_id", "")
+_prefill_event_name    = _params.get("event_name", "")
+_prefill_event_city    = _params.get("event_city", "")
+_prefill_event_country = _params.get("event_country", "")
+_prefill_event_start   = _params.get("event_start", "")
+
+if _prefill_event_name:
+    st.success(
+        f"Applying to speak at **{_prefill_event_name}** in {_prefill_event_city}, "
+        f"{_prefill_event_country}. The event details are pre-filled below.",
+        icon="📅",
+    )
+
 # ── Section 1: About You ───────────────────────────────────────────────────────
 st.markdown('<div class="step-label">Section 1 of 5</div>', unsafe_allow_html=True)
 st.markdown('<div class="section-title">About You</div>', unsafe_allow_html=True)
@@ -108,20 +123,29 @@ st.markdown('<div class="step-label">Section 3 of 5</div>', unsafe_allow_html=Tr
 st.markdown('<div class="section-title">The Event</div>', unsafe_allow_html=True)
 st.markdown('<div class="section-hint">Tell us about the event you\'re speaking at.</div>', unsafe_allow_html=True)
 
-event_name    = st.text_input("Event name *", placeholder="Data + AI Summit, PyData Global, ...")
+event_name    = st.text_input("Event name *", value=_prefill_event_name, placeholder="Data + AI Summit, PyData Global, ...")
 event_website = st.text_input("Event website", placeholder="https://...")
 
 c9, c10 = st.columns(2)
 with c9:
-    event_date_start = st.date_input("Event start date *", min_value=date.today())
+    _start_val = date.today()
+    if _prefill_event_start:
+        try:
+            from datetime import datetime as _dt
+            _start_val = _dt.strptime(_prefill_event_start[:10], "%Y-%m-%d").date()
+            if _start_val < date.today():
+                _start_val = date.today()
+        except Exception:
+            pass
+    event_date_start = st.date_input("Event start date *", value=_start_val, min_value=date.today())
 with c10:
     event_date_end   = st.date_input("Event end date", min_value=date.today())
 
 c11, c12 = st.columns(2)
 with c11:
-    event_city    = st.text_input("Event city *", placeholder="Berlin")
+    event_city    = st.text_input("Event city *", value=_prefill_event_city, placeholder="Berlin")
 with c12:
-    event_country = st.text_input("Event country *", placeholder="Germany")
+    event_country = st.text_input("Event country *", value=_prefill_event_country, placeholder="Germany")
 
 event_type = st.selectbox(
     "Event type *",
@@ -248,7 +272,7 @@ if submitted:
         str(est_cost),
         additional_notes or "",
         "",   # admin_notes (blank on submit)
-        "",   # matched_event (blank on submit)
+        _prefill_event_id,   # matched_event — pre-linked if coming from Events Board
     ]
     ok = append_row("Speaker_Applications", row)
     if ok:
