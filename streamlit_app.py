@@ -1,7 +1,10 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
+from datetime import datetime
 import streamlit as st
+import pandas as pd
 from utils.styles import inject_css
+from utils.sheets import read_tab
 
 st.set_page_config(
     page_title="Snowflake Community Voices",
@@ -84,6 +87,55 @@ with s3:
     st.markdown('<div class="stat-card"><div class="num">4.2/5</div><div class="label">Avg Talk Rating</div></div>', unsafe_allow_html=True)
 with s4:
     st.markdown('<div class="stat-card"><div class="num">15+</div><div class="label">Countries Reached</div></div>', unsafe_allow_html=True)
+
+st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+# ── Past Events ────────────────────────────────────────────────────────────────
+st.markdown("### Past events")
+st.caption("Events that have already taken place under the Community Voices programme.")
+
+@st.cache_data(ttl=600)
+def load_home_past_events():
+    try:
+        return read_tab("Events")
+    except Exception:
+        return pd.DataFrame()
+
+def _parse_home_date(d):
+    d = str(d).strip()
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d", "%b %d, %Y", "%B %d, %Y", "%b %d %Y"):
+        try:
+            x = datetime.strptime(d, fmt)
+            if x.year < 2000: x = x.replace(year=2026)
+            return x
+        except Exception:
+            pass
+    return None
+
+df_home_all = load_home_past_events()
+if df_home_all.empty:
+    st.info("No past events on record yet.")
+else:
+    today_h = datetime.today()
+    date_col_h = next((c for c in df_home_all.columns if "start" in c.lower() or "date" in c.lower()), None)
+    if date_col_h:
+        df_home_all["_parsed"] = df_home_all[date_col_h].apply(_parse_home_date)
+        past_home = df_home_all[df_home_all["_parsed"].apply(lambda x: x is not None and x < today_h)].copy()
+        past_home = past_home.sort_values("_parsed", ascending=False).reset_index(drop=True)
+    else:
+        past_home = df_home_all.copy()
+
+    if past_home.empty:
+        st.info("No past events on record yet.")
+    else:
+        disp_cols = [c for c in ["event_name","event_city","event_country","event_date_start","event_type","expected_audience"] if c in past_home.columns]
+        if disp_cols:
+            disp = past_home[disp_cols].copy()
+            disp.columns = [c.replace("event_","").replace("_"," ").title() for c in disp_cols]
+            st.dataframe(disp, use_container_width=True, hide_index=True)
+        else:
+            st.dataframe(past_home.drop(columns=["_parsed"], errors="ignore"), use_container_width=True, hide_index=True)
+        st.caption(f"{len(past_home)} past event(s)")
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 

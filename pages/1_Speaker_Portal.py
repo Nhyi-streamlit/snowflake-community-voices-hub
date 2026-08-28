@@ -43,9 +43,9 @@ st.markdown("""
 
 # ── Tab order — put Feedback first if audience QR mode ─────────────────────────
 if _audience_mode:
-    TAB_NAMES = ["⭐ Talk Feedback", "🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "📅 Upcoming Events", "📜 Past Events", "📦 Resources"]
+    TAB_NAMES = ["⭐ Talk Feedback", "🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "📅 Upcoming Events", "📦 Resources"]
 else:
-    TAB_NAMES = ["🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "📅 Upcoming Events", "📜 Past Events", "📦 Resources", "⭐ Talk Feedback"]
+    TAB_NAMES = ["🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "📅 Upcoming Events", "📦 Resources", "⭐ Talk Feedback"]
 
 tabs = st.tabs(TAB_NAMES)
 
@@ -55,7 +55,6 @@ tab_browse    = tab_map.get("🎤 Available Speaking Slots")
 tab_travel    = tab_map.get("✈️ Book Your Travel")
 tab_uber      = tab_map.get("🚗 Uber Request")
 tab_upcoming  = tab_map.get("📅 Upcoming Events")
-tab_past      = tab_map.get("📜 Past Events")
 tab_resources = tab_map.get("📦 Resources")
 tab_feedback  = tab_map.get("⭐ Talk Feedback")
 
@@ -278,45 +277,6 @@ with tab_upcoming:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: PAST EVENTS
-# ══════════════════════════════════════════════════════════════════════════════
-with tab_past:
-    st.markdown("### Past events")
-    st.markdown("Events that have already taken place under the Community Voices programme.")
-
-    @st.cache_data(ttl=600)
-    def load_past_events():
-        try:
-            return read_tab("Events")
-        except Exception:
-            return pd.DataFrame()
-
-    df_past_all = load_past_events()
-
-    if df_past_all.empty:
-        st.info("No past events on record yet.")
-    else:
-        today_p = datetime.today()
-        date_col_p = next((c for c in df_past_all.columns if "start" in c.lower() or "date" in c.lower()), None)
-        if date_col_p:
-            df_past_all["_parsed_date"] = df_past_all[date_col_p].apply(_parse_event_date)
-            past_df = df_past_all[df_past_all["_parsed_date"].apply(lambda x: x is not None and x < today_p)].copy()
-            past_df = past_df.sort_values("_parsed_date", ascending=False).reset_index(drop=True)
-        else:
-            past_df = df_past_all.copy()
-
-        if past_df.empty:
-            st.info("No past events on record yet.")
-        else:
-            display_cols_p = [c for c in ["event_name","event_city","event_country","event_date_start","event_date_end","event_type","expected_audience"] if c in past_df.columns]
-            if display_cols_p:
-                display_p = past_df[display_cols_p].copy()
-                display_p.columns = [c.replace("event_","").replace("_"," ").title() for c in display_cols_p]
-                st.dataframe(display_p, use_container_width=True, hide_index=True)
-            else:
-                st.dataframe(past_df.drop(columns=["_parsed_date"], errors="ignore"), use_container_width=True, hide_index=True)
-
-            st.caption(f"{len(past_df)} past event(s)")
-
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
