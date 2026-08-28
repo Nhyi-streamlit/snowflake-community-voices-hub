@@ -49,11 +49,11 @@ st.markdown("""
 
 # ── Tab order — put Feedback first if audience QR mode, Apply first if applying ─
 if _audience_mode:
-    TAB_NAMES = ["⭐ Talk Feedback", "📅 Browse Events", "📝 Apply", "🔍 My Status", "📦 Resources"]
+    TAB_NAMES = ["⭐ Talk Feedback", "📅 Browse Events", "📝 Apply", "🔍 My Status", "📦 Resources", "✈️ My Travel", "🚗 Uber Request"]
 elif _apply_mode:
-    TAB_NAMES = ["📝 Apply", "📅 Browse Events", "🔍 My Status", "📦 Resources", "⭐ Talk Feedback"]
+    TAB_NAMES = ["📝 Apply", "📅 Browse Events", "🔍 My Status", "📦 Resources", "⭐ Talk Feedback", "✈️ My Travel", "🚗 Uber Request"]
 else:
-    TAB_NAMES = ["📅 Browse Events", "📝 Apply", "🔍 My Status", "📦 Resources", "⭐ Talk Feedback"]
+    TAB_NAMES = ["📅 Browse Events", "📝 Apply", "🔍 My Status", "📦 Resources", "⭐ Talk Feedback", "✈️ My Travel", "🚗 Uber Request"]
 
 tabs = st.tabs(TAB_NAMES)
 
@@ -64,6 +64,8 @@ tab_apply    = tab_map.get("📝 Apply")
 tab_status   = tab_map.get("🔍 My Status")
 tab_resources= tab_map.get("📦 Resources")
 tab_feedback = tab_map.get("⭐ Talk Feedback")
+tab_travel   = tab_map.get("✈️ My Travel")
+tab_uber     = tab_map.get("🚗 Uber Request")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: BROWSE EVENTS
@@ -487,3 +489,175 @@ with tab_feedback:
                     3. Or paste link in event chat<br>4. Audience scans → 30-sec rating form</p></div>""", unsafe_allow_html=True)
             except ImportError:
                 st.error("Run: pip install qrcode[pil] Pillow")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB: MY TRAVEL — upload flight/hotel details
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_travel:
+    st.markdown("### Submit your travel details")
+    st.markdown(
+        "Once your travel is booked (by you or Navan), submit your flight and hotel details here. "
+        "This helps the program team track logistics and appears in the Navan portal for confirmation."
+    )
+
+    if st.session_state.get("sp_travel_done"):
+        st.markdown('<div class="success-box"><h2>Travel details saved!</h2><p>The program team can now see your itinerary in the Navan portal.</p></div>', unsafe_allow_html=True)
+        if st.button("Update my travel details", key="sp_travel_reset"):
+            st.session_state.pop("sp_travel_done", None); st.rerun()
+        st.stop()
+
+    st.markdown("**Verify your identity first**")
+    tv1, tv2 = st.columns(2)
+    with tv1: tv_email = st.text_input("Your email", key="tv_email")
+    with tv2: tv_cid   = st.text_input("Confirmation ID", placeholder="CV-2026-XXXXXXXX", key="tv_cid")
+
+    if tv_email and tv_cid:
+        # Verify speaker exists and is approved
+        try:
+            df_verify = read_tab("Speaker_Applications")
+        except Exception:
+            df_verify = pd.DataFrame()
+
+        match = pd.DataFrame()
+        if not df_verify.empty and "confirmation_id" in df_verify.columns:
+            match = df_verify[
+                (df_verify["confirmation_id"].str.strip().str.upper() == tv_cid.strip().upper()) &
+                (df_verify["email"].str.strip().str.lower() == tv_email.strip().lower())
+            ]
+
+        if match.empty:
+            st.warning("No matching application found. Double-check your email and Confirmation ID.")
+        else:
+            spk_row = match.iloc[0]
+            ev_name  = spk_row.get("event_name", "")
+            ev_city  = spk_row.get("event_city", "")
+            ev_date  = spk_row.get("event_date_start", "")
+            spk_name = f"{spk_row.get('first_name','')} {spk_row.get('last_name','')}".strip()
+
+            st.success(f"Verified: **{spk_name}** — {ev_name} in {ev_city}")
+            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+            st.markdown("#### Outbound flight")
+            tf1, tf2 = st.columns(2)
+            with tf1: airline   = st.text_input("Airline", placeholder="Delta, British Airways...", key="tv_airline")
+            with tf2: flight_no = st.text_input("Flight number", placeholder="DL1234", key="tv_fno")
+            tf3, tf4 = st.columns(2)
+            with tf3: dep_city  = st.text_input("Departing from", placeholder="London LHR", key="tv_dep")
+            with tf4: dep_dt    = st.text_input("Departure date & time", placeholder="2026-09-10 08:30", key="tv_depdt")
+            tf5, tf6 = st.columns(2)
+            with tf5: arr_city  = st.text_input("Arriving at", placeholder="Berlin TXL", key="tv_arr")
+            with tf6: arr_dt    = st.text_input("Arrival date & time", placeholder="2026-09-10 11:45", key="tv_arrdt")
+
+            st.markdown("#### Return flight")
+            tr1, tr2 = st.columns(2)
+            with tr1: ret_fno   = st.text_input("Return flight number", placeholder="DL5678", key="tv_rfno")
+            with tr2: ret_dep   = st.text_input("Return departure date & time", placeholder="2026-09-11 14:00", key="tv_rdep")
+            ret_arr = st.text_input("Return arrival date & time", placeholder="2026-09-11 16:30", key="tv_rarr")
+
+            st.markdown("#### Hotel")
+            th1, th2 = st.columns(2)
+            with th1: hotel_name    = st.text_input("Hotel name", key="tv_hotel")
+            with th2: hotel_address = st.text_input("Hotel address", key="tv_hadd")
+            th3, th4 = st.columns(2)
+            with th3: hotel_in  = st.text_input("Check-in date", placeholder="2026-09-09", key="tv_cin")
+            with th4: hotel_out = st.text_input("Check-out date", placeholder="2026-09-12", key="tv_cout")
+
+            total_cost = st.number_input("Total travel cost (USD)", min_value=0, max_value=20000, step=50, key="tv_cost")
+            tv_notes   = st.text_area("Anything else for the travel team?", height=70, key="tv_notes")
+
+            if st.button("Submit Travel Details", type="primary", use_container_width=True, key="tv_submit"):
+                import uuid
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                row = [
+                    str(uuid.uuid4())[:8].upper(), now,
+                    tv_cid.strip().upper(), spk_name, tv_email.strip(),
+                    ev_name, ev_city, ev_date,
+                    airline, flight_no, dep_city, dep_dt, arr_city, arr_dt,
+                    ret_fno, ret_dep, ret_arr,
+                    hotel_name, hotel_address, hotel_in, hotel_out,
+                    str(total_cost), "Pending Booking", tv_notes or "",
+                ]
+                if append_row("Travel_Details", row):
+                    st.session_state["sp_travel_done"] = True; st.rerun()
+                else:
+                    st.error("Could not save. Please try again or email community@snowflake.com.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB: UBER REQUEST
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_uber:
+    st.markdown("### Request an Uber gift card")
+    st.markdown(
+        "Approved speakers can request an Uber gift card for local transport to and from the event venue. "
+        "Requests are reviewed within 2 business days and the gift card is sent to your email."
+    )
+
+    if st.session_state.get("sp_uber_done"):
+        st.markdown('<div class="success-box"><h2>Uber request submitted!</h2><p>You\'ll receive the gift card link at your email within 2 business days.</p></div>', unsafe_allow_html=True)
+        if st.button("Submit another request", key="sp_uber_reset"):
+            st.session_state.pop("sp_uber_done", None); st.rerun()
+        st.stop()
+
+    st.markdown("**Verify your identity first**")
+    ub1, ub2 = st.columns(2)
+    with ub1: ub_email = st.text_input("Your email", key="ub_email")
+    with ub2: ub_cid   = st.text_input("Confirmation ID", placeholder="CV-2026-XXXXXXXX", key="ub_cid")
+
+    if ub_email and ub_cid:
+        try: df_verify_u = read_tab("Speaker_Applications")
+        except Exception: df_verify_u = pd.DataFrame()
+
+        match_u = pd.DataFrame()
+        if not df_verify_u.empty and "confirmation_id" in df_verify_u.columns:
+            match_u = df_verify_u[
+                (df_verify_u["confirmation_id"].str.strip().str.upper() == ub_cid.strip().upper()) &
+                (df_verify_u["email"].str.strip().str.lower() == ub_email.strip().lower())
+            ]
+
+        if match_u.empty:
+            st.warning("No matching application found.")
+        elif match_u.iloc[0].get("status","") != "Approved":
+            st.warning("Uber requests are available to **Approved** speakers only. Check your status on the My Status tab.")
+        else:
+            spk_u = match_u.iloc[0]
+            spk_name_u = f"{spk_u.get('first_name','')} {spk_u.get('last_name','')}".strip()
+            ev_name_u  = spk_u.get("event_name","")
+            ev_city_u  = spk_u.get("event_city","")
+            ev_date_u  = spk_u.get("event_date_start","")
+
+            st.success(f"Verified: **{spk_name_u}** — {ev_name_u} in {ev_city_u}")
+            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+            st.markdown("**Uber request details**")
+            uc1, uc2 = st.columns(2)
+            with uc1:
+                rides = st.selectbox("Rides needed",
+                    ["1 (one-way)", "2 (round trip — to venue + back)", "4 (both days)", "Other"],
+                    key="ub_rides")
+            with uc2:
+                amount = st.number_input("Estimated amount (USD)",
+                    min_value=5, max_value=500, step=5, value=40, key="ub_amount")
+            ub_notes = st.text_area(
+                "Notes (pickup/dropoff locations, special requirements)",
+                height=80, placeholder="Pickup: hotel downtown → drop-off: venue address...",
+                key="ub_notes")
+
+            st.info(
+                "Standard Uber gift card allowance is **$40 per event** (round trip). "
+                "Requests above $40 require a brief note explaining the need.",
+                icon="💳",
+            )
+
+            if st.button("Submit Uber Request", type="primary", use_container_width=True, key="ub_submit"):
+                import uuid
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                row = [
+                    str(uuid.uuid4())[:8].upper(), now,
+                    ub_cid.strip().upper(), spk_name_u, ub_email.strip(),
+                    ev_name_u, ev_city_u, ev_date_u,
+                    rides, str(amount), ub_notes or "", "Pending",
+                ]
+                if append_row("Uber_Requests", row):
+                    st.session_state["sp_uber_done"] = True; st.rerun()
+                else:
+                    st.error("Could not submit. Please try again.")

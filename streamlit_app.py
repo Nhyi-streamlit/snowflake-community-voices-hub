@@ -25,50 +25,51 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Three portals ──────────────────────────────────────────────────────────────
-col_spk, col_vnd, col_admin = st.columns(3, gap="large")
+col_spk, col_vnd, col_admin, col_navan = st.columns(4, gap="medium")
 
 with col_spk:
     st.markdown("""
     <div style="background:linear-gradient(135deg,#EBF8FF,#BEE3F8);border:2px solid #29B5E8;
-                border-radius:16px;padding:32px 28px;text-align:center;min-height:280px;">
-      <div style="font-size:2.5rem;margin-bottom:12px;">🎤</div>
-      <h3 style="color:#1A365D;font-size:1.4rem;margin-bottom:10px;">Speaker Portal</h3>
-      <p style="color:#2D4A6B;font-size:0.92rem;margin-bottom:20px;">
-        Browse open speaking slots, submit an application, check your status,
-        access the speaker resource kit, and generate talk feedback QR codes.
-      </p>
+                border-radius:16px;padding:28px 22px;text-align:center;min-height:260px;">
+      <div style="font-size:2rem;margin-bottom:10px;">🎤</div>
+      <h3 style="color:#1A365D;font-size:1.2rem;margin-bottom:8px;">Speaker Portal</h3>
+      <p style="color:#2D4A6B;font-size:0.88rem;">Browse events, apply, check status, resources, travel details, Uber requests.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/1_Speaker_Portal.py", label="Enter Speaker Portal →", icon="🎤")
+    st.page_link("pages/1_Speaker_Portal.py", label="Speaker Portal →", icon="🎤")
 
 with col_vnd:
     st.markdown("""
     <div style="background:linear-gradient(135deg,#FAF5FF,#E9D8FD);border:2px solid #805AD5;
-                border-radius:16px;padding:32px 28px;text-align:center;min-height:280px;">
-      <div style="font-size:2.5rem;margin-bottom:12px;">🏟️</div>
-      <h3 style="color:#44337A;font-size:1.4rem;margin-bottom:10px;">Vendor Portal</h3>
-      <p style="color:#553C9A;font-size:0.92rem;margin-bottom:20px;">
-        Register your event and request a Snowflake community speaker.
-        Upload multiple events at once via CSV, Excel, or Google Sheets.
-        Track the status of your submissions.
-      </p>
+                border-radius:16px;padding:28px 22px;text-align:center;min-height:260px;">
+      <div style="font-size:2rem;margin-bottom:10px;">🏟️</div>
+      <h3 style="color:#44337A;font-size:1.2rem;margin-bottom:8px;">Vendor Portal</h3>
+      <p style="color:#553C9A;font-size:0.88rem;">Register events, request speakers, bulk upload, track submissions.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/2_Vendor_Portal.py", label="Enter Vendor Portal →", icon="🏟️")
+    st.page_link("pages/2_Vendor_Portal.py", label="Vendor Portal →", icon="🏟️")
 
 with col_admin:
     st.markdown("""
     <div style="background:linear-gradient(135deg,#EBF8FF,#E2F0FB);border:2px solid #0E2346;
-                border-radius:16px;padding:32px 28px;text-align:center;min-height:280px;">
-      <div style="font-size:2.5rem;margin-bottom:12px;">🔐</div>
-      <h3 style="color:#0E2346;font-size:1.4rem;margin-bottom:10px;">Admin Portal</h3>
-      <p style="color:#2D3748;font-size:0.92rem;margin-bottom:20px;">
-        Manage applications, approve speakers, handle Navan travel requests,
-        track Q3 goals, match speakers to events, and generate email communications.
-      </p>
+                border-radius:16px;padding:28px 22px;text-align:center;min-height:260px;">
+      <div style="font-size:2rem;margin-bottom:10px;">🔐</div>
+      <h3 style="color:#0E2346;font-size:1.2rem;margin-bottom:8px;">Admin Portal</h3>
+      <p style="color:#2D3748;font-size:0.88rem;">Manage applications, Q3 goals, speaker matching, comms, and bulk operations.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/3_Admin.py", label="Enter Admin Portal →", icon="🔐")
+    st.page_link("pages/3_Admin.py", label="Admin Portal →", icon="🔐")
+
+with col_navan:
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#F7FAFC,#EDF2F7);border:2px solid #4A5568;
+                border-radius:16px;padding:28px 22px;text-align:center;min-height:260px;">
+      <div style="font-size:2rem;margin-bottom:10px;">✈️</div>
+      <h3 style="color:#1A202C;font-size:1.2rem;margin-bottom:8px;">Navan Travel Portal</h3>
+      <p style="color:#4A5568;font-size:0.88rem;">Travel booking queue, speaker itineraries, Uber requests, batch export.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.page_link("pages/4_Navan_Portal.py", label="Navan Portal →", icon="✈️")
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
