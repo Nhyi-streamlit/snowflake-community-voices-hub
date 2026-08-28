@@ -89,7 +89,7 @@ if st.button("Refresh data", key="refresh"):
     st.rerun()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms, tab_upload = st.tabs([
+tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms, tab_upload, tab_navan = st.tabs([
     "Applications Queue",
     "Vendor Events",
     "Speaker-Event Matches",
@@ -97,6 +97,7 @@ tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms, tab_upload =
     "Talk Feedback",
     "Comms Generator",
     "Bulk Upload",
+    "✈️ Navan Travel",
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -776,4 +777,201 @@ with tab_upload:
 
             st.success(f"Submitted {ok_count} of {len(df_admin_upload)} row(s) successfully.")
             st.cache_data.clear()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 8: Navan Travel Requests
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_navan:
+    st.markdown("""
+    <div class="info-card" style="border-color:#0E2346; background:linear-gradient(135deg,#EBF8FF,#F0F9FF);">
+      <h4>Navan Travel Request Hub</h4>
+      <p>
+        Approved speakers who requested travel support are listed below.
+        Generate formatted trip requests to send to Navan, export a batch CSV,
+        or mark requests as submitted once you've raised them in Navan.
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    df_navan_apps = data.get("Speaker_Applications", pd.DataFrame())
+
+    # Filter: approved + requested travel/hotel
+    TRAVEL_KEYWORDS = ["travel", "flight", "hotel", "accommodation", "registration"]
+
+    if df_navan_apps.empty or "status" not in df_navan_apps.columns:
+        st.info("No applications loaded.")
+    else:
+        approved_apps = df_navan_apps[df_navan_apps["status"] == "Approved"].copy()
+
+        # Filter to those who want travel support
+        if "support_types" in approved_apps.columns:
+            travel_mask = approved_apps["support_types"].str.lower().str.contains(
+                "|".join(TRAVEL_KEYWORDS), na=False
+            )
+            travel_apps = approved_apps[travel_mask].copy()
+        else:
+            travel_apps = approved_apps.copy()
+
+        # Separate already-sent from pending
+        if "admin_notes" in travel_apps.columns:
+            sent_mask    = travel_apps["admin_notes"].str.contains("Navan: sent", na=False)
+            pending_apps = travel_apps[~sent_mask].copy()
+            sent_apps    = travel_apps[sent_mask].copy()
+        else:
+            pending_apps = travel_apps.copy()
+            sent_apps    = pd.DataFrame()
+
+        # ── Summary metrics ────────────────────────────────────────────────────
+        mn1, mn2, mn3 = st.columns(3)
+        with mn1:
+            st.metric("Pending Navan requests", len(pending_apps))
+        with mn2:
+            st.metric("Sent to Navan", len(sent_apps))
+        with mn3:
+            try:
+                total_cost = pd.to_numeric(travel_apps.get("estimated_cost", pd.Series(dtype=str)), errors="coerce").sum()
+                st.metric("Total est. travel cost", f"${total_cost:,.0f}")
+            except Exception:
+                st.metric("Total est. travel cost", "—")
+
+        st.markdown("---")
+
+        # ── Export all pending as CSV ──────────────────────────────────────────
+        if not pending_apps.empty:
+            # Build Navan-compatible CSV columns
+            navan_rows = []
+            for _, r in pending_apps.iterrows():
+                full_name = f"{r.get('first_name','')} {r.get('last_name','')}".strip()
+                navan_rows.append({
+                    "traveler_name":       full_name,
+                    "traveler_email":      r.get("email", ""),
+                    "trip_purpose":        f"Speaking: {r.get('talk_title', r.get('event_name',''))}",
+                    "event_name":          r.get("event_name", ""),
+                    "origin_city":         r.get("traveling_from", r.get("city", "")),
+                    "destination_city":    r.get("event_city", ""),
+                    "destination_country": r.get("event_country", ""),
+                    "departure_date":      r.get("event_date_start", ""),
+                    "return_date":         r.get("event_date_end", r.get("event_date_start", "")),
+                    "estimated_cost_usd":  r.get("estimated_cost", "0"),
+                    "support_requested":   r.get("support_types", ""),
+                    "confirmation_id":     r.get("confirmation_id", ""),
+                    "notes":               r.get("additional_notes", ""),
+                })
+            navan_df = pd.DataFrame(navan_rows)
+            csv_bytes = navan_df.to_csv(index=False).encode()
+
+            st.download_button(
+                f"Export {len(pending_apps)} pending request(s) as Navan CSV",
+                data=csv_bytes,
+                file_name=f"navan_travel_requests_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                type="primary",
+                key="navan_export",
+            )
+
+        st.markdown("---")
+
+        # ── Per-request cards ──────────────────────────────────────────────────
+        if pending_apps.empty:
+            st.info("No pending travel requests.")
+        else:
+            st.markdown(f"### {len(pending_apps)} pending request(s)")
+
+            for idx, r in pending_apps.iterrows():
+                sheet_row  = idx + 2
+                full_name  = f"{r.get('first_name','')} {r.get('last_name','')}".strip()
+                email      = r.get("email", "")
+                event_name = r.get("event_name", "")
+                event_city = r.get("event_city", "")
+                event_country = r.get("event_country", "")
+                dep_date   = r.get("event_date_start", "")
+                ret_date   = r.get("event_date_end", dep_date)
+                origin     = r.get("traveling_from", r.get("city", ""))
+                cost       = r.get("estimated_cost", "0")
+                support    = r.get("support_types", "")
+                talk       = r.get("talk_title", "")
+                cid        = r.get("confirmation_id", "")
+
+                with st.expander(f"✈️ **{full_name}** — {event_name} ({event_city}) · {dep_date}"):
+                    col_detail, col_actions = st.columns([2, 1])
+
+                    with col_detail:
+                        st.markdown(f"""
+                        | Field | Value |
+                        |-------|-------|
+                        | **Traveler** | {full_name} |
+                        | **Email** | {email} |
+                        | **Talk** | {talk} |
+                        | **Event** | {event_name} |
+                        | **Destination** | {event_city}, {event_country} |
+                        | **Departure date** | {dep_date} |
+                        | **Return date** | {ret_date} |
+                        | **Traveling from** | {origin} |
+                        | **Support requested** | {support} |
+                        | **Est. cost (USD)** | ${cost} |
+                        | **Confirmation ID** | {cid} |
+                        """)
+
+                    with col_actions:
+                        # Navan email template
+                        navan_email = f"""Hi Navan team,
+
+Please book the following trip for a Snowflake Community Voices speaker:
+
+Traveler: {full_name}
+Email: {email}
+Trip: Speaking at {event_name}
+Talk: {talk}
+
+Travel details:
+- Origin: {origin}
+- Destination: {event_city}, {event_country}
+- Outbound: {dep_date}
+- Return: {ret_date}
+- Support needed: {support}
+- Budget: ~${cost} USD
+
+Reference ID: {cid}
+
+Please confirm once booked. Any questions, reply to this email.
+
+Thanks,
+Aba Micah
+Community Voices Program, Snowflake"""
+
+                        st.text_area(
+                            "Navan email template",
+                            value=navan_email,
+                            height=260,
+                            key=f"navan_email_{cid}",
+                            help="Copy and send to your Navan travel coordinator.",
+                        )
+
+                        if st.button(
+                            "Mark as sent to Navan",
+                            key=f"navan_sent_{cid}",
+                            type="primary",
+                        ):
+                            sent_note = f"Navan: sent {datetime.now().strftime('%Y-%m-%d')}"
+                            existing_notes = r.get("admin_notes", "")
+                            new_notes = f"{existing_notes} | {sent_note}".strip(" |")
+                            notes_col = col_letter(df_navan_apps, "admin_notes")
+                            if update_cell("Speaker_Applications", sheet_row, notes_col, new_notes):
+                                st.success("Marked as sent!")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error("Could not update — check Sheets connection.")
+
+        # ── Already sent ───────────────────────────────────────────────────────
+        if not sent_apps.empty:
+            st.markdown("---")
+            with st.expander(f"Requests already sent to Navan ({len(sent_apps)})"):
+                for _, r in sent_apps.iterrows():
+                    full_name  = f"{r.get('first_name','')} {r.get('last_name','')}".strip()
+                    event_name = r.get("event_name", "")
+                    dep_date   = r.get("event_date_start", "")
+                    notes      = r.get("admin_notes", "")
+                    sent_date  = notes.split("Navan: sent")[-1].strip().split("|")[0].strip() if "Navan: sent" in notes else ""
+                    st.markdown(f"- ✅ **{full_name}** — {event_name} ({dep_date}){' · sent ' + sent_date if sent_date else ''}")
 
