@@ -148,6 +148,51 @@ def update_row(tab: str, sheet_row: int, values: list) -> bool:
         return False
 
 
+# ── Uber code pool ─────────────────────────────────────────────────────────────
+
+def claim_uber_code(email: str, tab_source: str) -> str | None:
+    """Claim the next available Uber code from the Uber_Codes tab.
+
+    Returns the code string on success, or None if no codes are available.
+    The Uber_Codes tab must have columns: code, status, assigned_to_email,
+    assigned_date, assigned_tab. Paste codes with status=AVAILABLE.
+    """
+    s = _secrets()
+    token = get_access_token()
+    sheet_id = s["GOOGLE_SPREADSHEET_ID"]
+
+    # Read all rows
+    url = (
+        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
+        f"/values/{requests.utils.quote('Uber_Codes')}"
+    )
+    resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+    resp.raise_for_status()
+    rows = resp.json().get("values", [])
+    if not rows or len(rows) < 2:
+        return None
+
+    # Find first AVAILABLE row (column B = status)
+    for i, row in enumerate(rows[1:], start=2):  # sheet row 2+
+        padded = row + [""] * (5 - len(row))
+        if padded[1].strip().upper() == "AVAILABLE":
+            code = padded[0].strip()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Update columns B-E in that row
+            cell_range = f"Uber_Codes!B{i}:E{i}"
+            requests.put(
+                f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}"
+                f"/values/{requests.utils.quote(cell_range)}",
+                params={"valueInputOption": "RAW"},
+                json={"values": [["USED", email, now, tab_source]]},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=15,
+            )
+            return code
+
+    return None
+
+
 # ── Column index helpers ───────────────────────────────────────────────────────
 
 def col_letter(df: pd.DataFrame, col_name: str) -> str:

@@ -8,7 +8,7 @@ import streamlit as st
 import pandas as pd
 import requests as _requests
 from utils.styles import inject_css
-from utils.sheets import read_tab, append_row, get_access_token
+from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code
 from utils.confirmation import generate_confirmation_id
 
 st.set_page_config(
@@ -165,7 +165,7 @@ with tab_browse:
 
         st.markdown("---")
         st.markdown("#### Sign up for a slot")
-        st.caption("Expand a row to register your interest. You'll receive a Confirmation ID by email.")
+        st.caption("Expand a row to register your interest.")
 
         for _, slot in filtered.iterrows():
             city=slot["City"]; ev_date=slot["Date"]; region=slot["Region"]
@@ -334,10 +334,10 @@ with tab_resources:
 
     with r_faq:
         for q, a in [
-            ("How do I sign up to speak?","Browse open slots on the Browse Events tab and click 'I'm interested in this slot'. You'll receive a Confirmation ID — keep it for travel booking and Uber requests."),
+            ("How do I sign up to speak?","Browse open slots on the Browse Events tab and click 'I'm interested in this slot'."),
             ("What support can I receive?","Travel booking via Navan, hotel, event registration, swag kit, speaker coaching, and co-promotion on Snowflake social channels."),
-            ("How do I book my travel?","Use the Book Your Travel tab. Enter your Confirmation ID and fill in the booking request form. Navan will arrange flights and hotel within 2 business days."),
-            ("Can I sign up for multiple events?","Yes — submit a separate sign-up for each. Each gets its own Confirmation ID."),
+            ("How do I book my travel?","Use the Book Your Travel tab and fill in the booking request form. Navan will arrange flights and hotel within 2 business days. You'll also receive an Uber code for local transport."),
+            ("Can I sign up for multiple events?","Yes — submit a separate sign-up for each event."),
             ("Do I need approval for slide content?","No pre-approval needed, but follow brand guidelines and don't discuss roadmap or pricing."),
         ]:
             with st.expander(q): st.markdown(a)
@@ -425,226 +425,216 @@ with tab_travel:
     )
 
     if st.session_state.get("sp_travel_done"):
-        st.markdown('<div class="success-box"><h2>Travel request received!</h2><p>Navan will arrange your flights and hotel and send your itinerary within 2 business days.</p></div>', unsafe_allow_html=True)
+        uber_code_tv = st.session_state.get("sp_travel_uber_code", "")
+        if uber_code_tv:
+            st.markdown(f"""<div class="success-box">
+                <h2>Travel request received!</h2>
+                <p>Navan will arrange your flights and hotel and send your itinerary within 2 business days.</p>
+                <div style="margin-top:16px;padding:16px;background:#F0FFF4;border:2px solid #38A169;border-radius:8px;text-align:center;">
+                    <div style="font-size:0.75rem;color:#276749;text-transform:uppercase;letter-spacing:0.05em;">Your Uber Code</div>
+                    <div style="font-size:1.5rem;font-weight:700;color:#276749;font-family:monospace;margin-top:4px;">{uber_code_tv}</div>
+                    <div style="font-size:0.8rem;color:#718096;margin-top:4px;">Use this for local transport to/from the event venue.</div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="success-box"><h2>Travel request received!</h2><p>Navan will arrange your flights and hotel and send your itinerary within 2 business days.</p><p style="color:#E53E3E;"><strong>No Uber codes available right now.</strong> Contact community@snowflake.com to receive one.</p></div>', unsafe_allow_html=True)
         if st.button("Submit another travel request", key="sp_travel_reset"):
-            st.session_state.pop("sp_travel_done", None); st.rerun()
+            st.session_state.pop("sp_travel_done", None)
+            st.session_state.pop("sp_travel_uber_code", None)
+            st.rerun()
         st.stop()
 
-    st.markdown("**Verify your identity**")
-    st.caption("Enter the email and Confirmation ID you received when you signed up for a speaking slot.")
-    tv1, tv2 = st.columns(2)
-    with tv1: tv_email = st.text_input("Your email", key="tv_email")
-    with tv2: tv_cid   = st.text_input("Confirmation ID", placeholder="CV-2026-XXXXXXXX", key="tv_cid")
+    # ── Section 1: Personal details ───────────────────────────────────
+    st.markdown('<div class="step-label">Section 1 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Personal details</div>', unsafe_allow_html=True)
+    pd1, pd2 = st.columns(2)
+    with pd1:
+        tv_email = st.text_input("Your email *", key="tv_email")
+    with pd2:
+        passport_name = st.text_input(
+            "Full name as on passport *",
+            placeholder="Ada Lovelace",
+            key="tv_passport_name",
+        )
+    pd3, pd4 = st.columns(2)
+    with pd3:
+        dob = st.text_input(
+            "Date of birth (DD/MM/YYYY) *",
+            placeholder="15/03/1990",
+            key="tv_dob",
+        )
+    with pd4:
+        phone = st.text_input(
+            "Mobile number (with country code)",
+            placeholder="+1 415 000 0000",
+            key="tv_phone",
+        )
+    pd5, pd6 = st.columns(2)
+    with pd5:
+        passport_no = st.text_input(
+            "Passport number",
+            placeholder="AB1234567",
+            key="tv_passport_no",
+        )
+    with pd6:
+        passport_exp = st.text_input(
+            "Passport expiry date",
+            placeholder="2029-06-30",
+            key="tv_passport_exp",
+        )
+    nationality = st.text_input("Nationality / citizenship", key="tv_nationality")
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-    if tv_email and tv_cid:
-        try:
-            df_verify = read_tab("Speaker_Applications")
-        except Exception:
-            df_verify = pd.DataFrame()
+    # ── Section 2: Event & Flights ────────────────────────────────────
+    st.markdown('<div class="step-label">Section 2 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Event & flight preferences</div>', unsafe_allow_html=True)
+    ev1, ev2 = st.columns(2)
+    with ev1:
+        tv_event_name = st.text_input("Event name *", placeholder="Data Summit NYC", key="tv_event_name")
+    with ev2:
+        tv_event_city = st.text_input("Event city *", placeholder="New York", key="tv_event_city")
+    tv_event_date = st.text_input("Event date(s) *", placeholder="2026-10-15", key="tv_event_date")
 
-        match = pd.DataFrame()
-        if not df_verify.empty and "confirmation_id" in df_verify.columns:
-            match = df_verify[
-                (df_verify["confirmation_id"].str.strip().str.upper() == tv_cid.strip().upper()) &
-                (df_verify["email"].str.strip().str.lower() == tv_email.strip().lower())
-            ]
+    fl1, fl2 = st.columns(2)
+    with fl1:
+        fly_from = st.text_input(
+            "Departing from (city / airport) *",
+            placeholder="London Heathrow (LHR)",
+            key="tv_fly_from",
+        )
+    with fl2:
+        fly_to = st.text_input(
+            "Flying to (city / airport) *",
+            key="tv_fly_to",
+        )
+    fl3, fl4 = st.columns(2)
+    with fl3:
+        outbound_date = st.text_input(
+            "Outbound travel date *",
+            placeholder="2026-09-09",
+            key="tv_outbound",
+        )
+    with fl4:
+        return_date = st.text_input(
+            "Return travel date *",
+            placeholder="2026-09-12",
+            key="tv_return",
+        )
+    fl5, fl6 = st.columns(2)
+    with fl5:
+        seat_class = st.selectbox(
+            "Preferred seat class",
+            ["Economy", "Premium Economy", "Business"],
+            key="tv_class",
+        )
+    with fl6:
+        airline_pref = st.text_input(
+            "Preferred airline (if any)",
+            placeholder="Delta, United, BA...",
+            key="tv_airline_pref",
+        )
+    ff_number = st.text_input(
+        "Frequent flyer number(s)",
+        placeholder="DL 123456789, UA 987654321",
+        key="tv_ff",
+    )
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-        if match.empty:
-            st.warning("No matching sign-up found. Double-check your email and Confirmation ID.")
+    # ── Section 3: Hotel ──────────────────────────────────────────────
+    st.markdown('<div class="step-label">Section 3 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Hotel preferences</div>', unsafe_allow_html=True)
+    ht1, ht2 = st.columns(2)
+    with ht1:
+        hotel_checkin = st.text_input(
+            "Check-in date *",
+            placeholder="2026-09-09",
+            key="tv_hotel_in",
+        )
+    with ht2:
+        hotel_checkout = st.text_input(
+            "Check-out date *",
+            placeholder="2026-09-12",
+            key="tv_hotel_out",
+        )
+    hotel_pref = st.selectbox(
+        "Hotel preference",
+        ["Near the event venue", "Near the city centre / downtown", "No preference"],
+        key="tv_hotel_pref",
+    )
+    hotel_loyalty = st.text_input(
+        "Hotel loyalty number(s)",
+        placeholder="Marriott Bonvoy 123456, Hilton Honors 654321",
+        key="tv_hotel_loyalty",
+    )
+    hotel_notes = st.text_input(
+        "Any specific hotel requirements?",
+        placeholder="Non-smoking, high floor, accessible room...",
+        key="tv_hotel_notes",
+    )
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+    # ── Section 4: Additional info ─────────────────────────────────────
+    st.markdown('<div class="step-label">Section 4 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Additional information</div>', unsafe_allow_html=True)
+    dietary = st.text_input(
+        "Dietary requirements",
+        placeholder="Vegetarian, gluten-free, nut allergy...",
+        key="tv_dietary",
+    )
+    emergency_name = st.text_input(
+        "Emergency contact name",
+        placeholder="Jane Lovelace",
+        key="tv_emerg_name",
+    )
+    emergency_phone = st.text_input(
+        "Emergency contact phone",
+        placeholder="+1 415 000 0001",
+        key="tv_emerg_phone",
+    )
+    tv_notes = st.text_area(
+        "Anything else Navan should know?",
+        height=80,
+        placeholder="Visa required, connecting through a hub city, arriving a day early...",
+        key="tv_notes",
+    )
+
+    st.info(
+        "Navan will book economy class by default unless business class is requested and approved. "
+        "Requests are processed within 2 business days — you'll receive your itinerary directly by email.",
+        icon="✈️",
+    )
+
+    required_ok = all([tv_email, passport_name, dob, tv_event_name, tv_event_city, tv_event_date, fly_from, fly_to, outbound_date, return_date, hotel_checkin, hotel_checkout])
+    if not required_ok:
+        st.caption("Complete all required fields (*) to submit.")
+
+    if st.button("Submit Travel Request", type="primary", use_container_width=True,
+                 disabled=not required_ok, key="tv_submit"):
+        import uuid
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        uber_code = claim_uber_code(tv_email.strip(), "Travel")
+        row = [
+            str(uuid.uuid4())[:8].upper(), now,
+            passport_name, tv_email.strip(),
+            tv_event_name, tv_event_city, tv_event_date,
+            # Personal details
+            passport_name, dob, passport_no, passport_exp, nationality, phone,
+            # Flights
+            fly_from, fly_to, outbound_date, return_date, seat_class,
+            airline_pref or "", ff_number or "",
+            # Hotel
+            hotel_checkin, hotel_checkout, hotel_pref,
+            hotel_loyalty or "", hotel_notes or "",
+            # Additional
+            dietary or "", emergency_name or "", emergency_phone or "",
+            tv_notes or "", uber_code or "", "Pending Booking",
+        ]
+        if append_row("Travel_Details", row):
+            st.session_state["sp_travel_done"] = True
+            st.session_state["sp_travel_uber_code"] = uber_code or ""
+            st.rerun()
         else:
-            spk_row  = match.iloc[0]
-            ev_name  = spk_row.get("event_name", "")
-            ev_city  = spk_row.get("event_city", "")
-            ev_date  = spk_row.get("event_date_start", "")
-            spk_name = f"{spk_row.get('first_name','')} {spk_row.get('last_name','')}".strip()
-
-            st.success(f"Verified: **{spk_name}** — {ev_name} in {ev_city}")
-            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-            # ── Section 1: Personal details ───────────────────────────────────
-            st.markdown('<div class="step-label">Section 1 of 4</div>', unsafe_allow_html=True)
-            st.markdown('<div class="section-title">Personal details</div>', unsafe_allow_html=True)
-            pd1, pd2 = st.columns(2)
-            with pd1:
-                passport_name = st.text_input(
-                    "Full name as on passport *",
-                    value=spk_name,
-                    placeholder="Ada Lovelace",
-                    key="tv_passport_name",
-                )
-            with pd2:
-                dob = st.text_input(
-                    "Date of birth (DD/MM/YYYY) *",
-                    placeholder="15/03/1990",
-                    key="tv_dob",
-                )
-            pd3, pd4 = st.columns(2)
-            with pd3:
-                passport_no = st.text_input(
-                    "Passport number",
-                    placeholder="AB1234567",
-                    key="tv_passport_no",
-                )
-            with pd4:
-                passport_exp = st.text_input(
-                    "Passport expiry date",
-                    placeholder="2029-06-30",
-                    key="tv_passport_exp",
-                )
-            pd5, pd6 = st.columns(2)
-            with pd5:
-                nationality = st.text_input("Nationality / citizenship", key="tv_nationality")
-            with pd6:
-                phone = st.text_input(
-                    "Mobile number (with country code)",
-                    placeholder="+1 415 000 0000",
-                    key="tv_phone",
-                )
-            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-            # ── Section 2: Flights ────────────────────────────────────────────
-            st.markdown('<div class="step-label">Section 2 of 4</div>', unsafe_allow_html=True)
-            st.markdown('<div class="section-title">Flight preferences</div>', unsafe_allow_html=True)
-            st.caption(f"Event: **{ev_name}** · {ev_city} · {ev_date}")
-
-            fl1, fl2 = st.columns(2)
-            with fl1:
-                fly_from = st.text_input(
-                    "Departing from (city / airport) *",
-                    placeholder="London Heathrow (LHR)",
-                    key="tv_fly_from",
-                )
-            with fl2:
-                fly_to = st.text_input(
-                    "Flying to (city / airport) *",
-                    value=ev_city,
-                    key="tv_fly_to",
-                )
-            fl3, fl4 = st.columns(2)
-            with fl3:
-                outbound_date = st.text_input(
-                    "Outbound travel date *",
-                    placeholder="2026-09-09",
-                    key="tv_outbound",
-                )
-            with fl4:
-                return_date = st.text_input(
-                    "Return travel date *",
-                    placeholder="2026-09-12",
-                    key="tv_return",
-                )
-            fl5, fl6 = st.columns(2)
-            with fl5:
-                seat_class = st.selectbox(
-                    "Preferred seat class",
-                    ["Economy", "Premium Economy", "Business"],
-                    key="tv_class",
-                )
-            with fl6:
-                airline_pref = st.text_input(
-                    "Preferred airline (if any)",
-                    placeholder="Delta, United, BA...",
-                    key="tv_airline_pref",
-                )
-            ff_number = st.text_input(
-                "Frequent flyer number(s)",
-                placeholder="DL 123456789, UA 987654321",
-                key="tv_ff",
-            )
-            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-            # ── Section 3: Hotel ──────────────────────────────────────────────
-            st.markdown('<div class="step-label">Section 3 of 4</div>', unsafe_allow_html=True)
-            st.markdown('<div class="section-title">Hotel preferences</div>', unsafe_allow_html=True)
-            ht1, ht2 = st.columns(2)
-            with ht1:
-                hotel_checkin = st.text_input(
-                    "Check-in date *",
-                    placeholder="2026-09-09",
-                    key="tv_hotel_in",
-                )
-            with ht2:
-                hotel_checkout = st.text_input(
-                    "Check-out date *",
-                    placeholder="2026-09-12",
-                    key="tv_hotel_out",
-                )
-            hotel_pref = st.selectbox(
-                "Hotel preference",
-                ["Near the event venue", "Near the city centre / downtown", "No preference"],
-                key="tv_hotel_pref",
-            )
-            hotel_loyalty = st.text_input(
-                "Hotel loyalty number(s)",
-                placeholder="Marriott Bonvoy 123456, Hilton Honors 654321",
-                key="tv_hotel_loyalty",
-            )
-            hotel_notes = st.text_input(
-                "Any specific hotel requirements?",
-                placeholder="Non-smoking, high floor, accessible room...",
-                key="tv_hotel_notes",
-            )
-            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-            # ── Section 4: Additional info ─────────────────────────────────────
-            st.markdown('<div class="step-label">Section 4 of 4</div>', unsafe_allow_html=True)
-            st.markdown('<div class="section-title">Additional information</div>', unsafe_allow_html=True)
-            dietary = st.text_input(
-                "Dietary requirements",
-                placeholder="Vegetarian, gluten-free, nut allergy...",
-                key="tv_dietary",
-            )
-            emergency_name = st.text_input(
-                "Emergency contact name",
-                placeholder="Jane Lovelace",
-                key="tv_emerg_name",
-            )
-            emergency_phone = st.text_input(
-                "Emergency contact phone",
-                placeholder="+1 415 000 0001",
-                key="tv_emerg_phone",
-            )
-            tv_notes = st.text_area(
-                "Anything else Navan should know?",
-                height=80,
-                placeholder="Visa required, connecting through a hub city, arriving a day early...",
-                key="tv_notes",
-            )
-
-            st.info(
-                "Navan will book economy class by default unless business class is requested and approved. "
-                "Requests are processed within 2 business days — you'll receive your itinerary directly by email.",
-                icon="✈️",
-            )
-
-            required_ok = all([passport_name, dob, fly_from, fly_to, outbound_date, return_date, hotel_checkin, hotel_checkout])
-            if not required_ok:
-                st.caption("Complete all required fields (*) to submit.")
-
-            if st.button("Submit Travel Request", type="primary", use_container_width=True,
-                         disabled=not required_ok, key="tv_submit"):
-                import uuid
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                row = [
-                    str(uuid.uuid4())[:8].upper(), now,
-                    tv_cid.strip().upper(), spk_name, tv_email.strip(),
-                    ev_name, ev_city, ev_date,
-                    # Personal details
-                    passport_name, dob, passport_no, passport_exp, nationality, phone,
-                    # Flights
-                    fly_from, fly_to, outbound_date, return_date, seat_class,
-                    airline_pref or "", ff_number or "",
-                    # Hotel
-                    hotel_checkin, hotel_checkout, hotel_pref,
-                    hotel_loyalty or "", hotel_notes or "",
-                    # Additional
-                    dietary or "", emergency_name or "", emergency_phone or "",
-                    tv_notes or "", "Pending Booking",
-                ]
-                if append_row("Travel_Details", row):
-                    st.session_state["sp_travel_done"] = True; st.rerun()
-                else:
-                    st.error("Could not save. Please try again or email community@snowflake.com.")
+            st.error("Could not save. Please try again or email community@snowflake.com.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: UBER REQUEST
@@ -652,76 +642,77 @@ with tab_travel:
 with tab_uber:
     st.markdown("### Request an Uber gift card")
     st.markdown(
-        "Approved speakers can request an Uber gift card for local transport to and from the event venue. "
-        "Requests are reviewed within 2 business days and the gift card is sent to your email."
+        "Approved speakers can request an Uber gift card for local transport to and from the event venue."
     )
 
     if st.session_state.get("sp_uber_done"):
-        st.markdown('<div class="success-box"><h2>Uber request submitted!</h2><p>You\'ll receive the gift card link at your email within 2 business days.</p></div>', unsafe_allow_html=True)
+        uber_code_ub = st.session_state.get("sp_uber_code", "")
+        if uber_code_ub:
+            st.markdown(f"""<div class="success-box">
+                <h2>Uber request submitted!</h2>
+                <div style="margin-top:16px;padding:16px;background:#F0FFF4;border:2px solid #38A169;border-radius:8px;text-align:center;">
+                    <div style="font-size:0.75rem;color:#276749;text-transform:uppercase;letter-spacing:0.05em;">Your Uber Code</div>
+                    <div style="font-size:1.5rem;font-weight:700;color:#276749;font-family:monospace;margin-top:4px;">{uber_code_ub}</div>
+                    <div style="font-size:0.8rem;color:#718096;margin-top:4px;">Use this for rides to/from the event venue.</div>
+                </div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="success-box"><h2>Uber request submitted!</h2><p style="color:#E53E3E;"><strong>No Uber codes available right now.</strong> Contact community@snowflake.com to receive one.</p></div>', unsafe_allow_html=True)
         if st.button("Submit another request", key="sp_uber_reset"):
-            st.session_state.pop("sp_uber_done", None); st.rerun()
+            st.session_state.pop("sp_uber_done", None)
+            st.session_state.pop("sp_uber_code", None)
+            st.rerun()
         st.stop()
 
-    st.markdown("**Verify your identity first**")
+    st.markdown("**Your details**")
     ub1, ub2 = st.columns(2)
-    with ub1: ub_email = st.text_input("Your email", key="ub_email")
-    with ub2: ub_cid   = st.text_input("Confirmation ID", placeholder="CV-2026-XXXXXXXX", key="ub_cid")
+    with ub1: ub_email = st.text_input("Your email *", key="ub_email")
+    with ub2: ub_name  = st.text_input("Your full name *", key="ub_name")
 
-    if ub_email and ub_cid:
-        try: df_verify_u = read_tab("Speaker_Applications")
-        except Exception: df_verify_u = pd.DataFrame()
+    ub3, ub4 = st.columns(2)
+    with ub3: ub_event = st.text_input("Event name *", placeholder="Data Summit NYC", key="ub_event")
+    with ub4: ub_city  = st.text_input("Event city *", placeholder="New York", key="ub_city")
+    ub_event_date = st.text_input("Event date(s) *", placeholder="2026-10-15", key="ub_event_date")
 
-        match_u = pd.DataFrame()
-        if not df_verify_u.empty and "confirmation_id" in df_verify_u.columns:
-            match_u = df_verify_u[
-                (df_verify_u["confirmation_id"].str.strip().str.upper() == ub_cid.strip().upper()) &
-                (df_verify_u["email"].str.strip().str.lower() == ub_email.strip().lower())
-            ]
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+    st.markdown("**Uber request details**")
+    uc1, uc2 = st.columns(2)
+    with uc1:
+        rides = st.selectbox("Rides needed",
+            ["1 (one-way)", "2 (round trip — to venue + back)", "4 (both days)", "Other"],
+            key="ub_rides")
+    with uc2:
+        amount = st.number_input("Estimated amount (USD)",
+            min_value=5, max_value=500, step=5, value=40, key="ub_amount")
+    ub_notes = st.text_area(
+        "Notes (pickup/dropoff locations, special requirements)",
+        height=80, placeholder="Pickup: hotel downtown -> drop-off: venue address...",
+        key="ub_notes")
 
-        if match_u.empty:
-            st.warning("No matching application found.")
-        elif match_u.iloc[0].get("status","") != "Approved":
-            st.warning("Uber requests are available to **Approved** speakers only. Contact community@snowflake.com if you believe this is an error.")
+    st.info(
+        "Standard Uber gift card allowance is **$40 per event** (round trip). "
+        "Requests above $40 require a brief note explaining the need.",
+        icon="💳",
+    )
+
+    ub_required = all([ub_email, ub_name, ub_event, ub_city, ub_event_date])
+    if not ub_required:
+        st.caption("Complete all required fields (*) to submit.")
+
+    if st.button("Submit Uber Request", type="primary", use_container_width=True,
+                 disabled=not ub_required, key="ub_submit"):
+        import uuid
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        uber_code = claim_uber_code(ub_email.strip(), "Uber")
+        row = [
+            str(uuid.uuid4())[:8].upper(), now,
+            ub_name.strip(), ub_email.strip(),
+            ub_event, ub_city, ub_event_date,
+            rides, str(amount), ub_notes or "", uber_code or "", "Fulfilled" if uber_code else "Pending — No codes",
+        ]
+        if append_row("Uber_Requests", row):
+            st.session_state["sp_uber_done"] = True
+            st.session_state["sp_uber_code"] = uber_code or ""
+            st.rerun()
         else:
-            spk_u = match_u.iloc[0]
-            spk_name_u = f"{spk_u.get('first_name','')} {spk_u.get('last_name','')}".strip()
-            ev_name_u  = spk_u.get("event_name","")
-            ev_city_u  = spk_u.get("event_city","")
-            ev_date_u  = spk_u.get("event_date_start","")
-
-            st.success(f"Verified: **{spk_name_u}** — {ev_name_u} in {ev_city_u}")
-            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-            st.markdown("**Uber request details**")
-            uc1, uc2 = st.columns(2)
-            with uc1:
-                rides = st.selectbox("Rides needed",
-                    ["1 (one-way)", "2 (round trip — to venue + back)", "4 (both days)", "Other"],
-                    key="ub_rides")
-            with uc2:
-                amount = st.number_input("Estimated amount (USD)",
-                    min_value=5, max_value=500, step=5, value=40, key="ub_amount")
-            ub_notes = st.text_area(
-                "Notes (pickup/dropoff locations, special requirements)",
-                height=80, placeholder="Pickup: hotel downtown → drop-off: venue address...",
-                key="ub_notes")
-
-            st.info(
-                "Standard Uber gift card allowance is **$40 per event** (round trip). "
-                "Requests above $40 require a brief note explaining the need.",
-                icon="💳",
-            )
-
-            if st.button("Submit Uber Request", type="primary", use_container_width=True, key="ub_submit"):
-                import uuid
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                row = [
-                    str(uuid.uuid4())[:8].upper(), now,
-                    ub_cid.strip().upper(), spk_name_u, ub_email.strip(),
-                    ev_name_u, ev_city_u, ev_date_u,
-                    rides, str(amount), ub_notes or "", "Pending",
-                ]
-                if append_row("Uber_Requests", row):
-                    st.session_state["sp_uber_done"] = True; st.rerun()
-                else:
-                    st.error("Could not submit. Please try again.")
+            st.error("Could not submit. Please try again.")
