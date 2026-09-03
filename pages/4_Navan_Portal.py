@@ -124,7 +124,7 @@ with t_trips:
             navan_filter = st.multiselect(
                 "Filter by booking status",
                 status_opts or BOOKING_STATUSES,
-                default=[s for s in ["Pending Booking", "In Progress"] if s in (status_opts or BOOKING_STATUSES)],
+                default=[],
                 key="nv_status_filter",
             )
         with fc2:
