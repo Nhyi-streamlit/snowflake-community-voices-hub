@@ -193,6 +193,33 @@ def claim_uber_code(email: str, tab_source: str) -> str | None:
     return None
 
 
+# ── Gmail notification ─────────────────────────────────────────────────────────
+
+def send_gmail(to: list[str], subject: str, body_html: str) -> bool:
+    """Send an email via Gmail API using existing OAuth credentials.
+
+    `to` is a list of email addresses. Returns True on success.
+    """
+    import base64
+    from email.mime.text import MIMEText
+
+    try:
+        token = get_access_token()
+        msg = MIMEText(body_html, "html")
+        msg["To"] = ", ".join(to)
+        msg["Subject"] = subject
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        resp = requests.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            json={"raw": raw},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 # ── Column index helpers ───────────────────────────────────────────────────────
 
 def col_letter(df: pd.DataFrame, col_name: str) -> str:

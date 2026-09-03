@@ -8,7 +8,7 @@ import streamlit as st
 import pandas as pd
 import requests as _requests
 from utils.styles import inject_css
-from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code
+from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code, send_gmail
 from utils.confirmation import generate_confirmation_id
 
 st.set_page_config(
@@ -630,6 +630,25 @@ with tab_travel:
             tv_notes or "", uber_code or "", "Pending Booking",
         ]
         if append_row("Travel_Details", row):
+            # Notify Navan team + Aba
+            send_gmail(
+                ["navan-team@snowflake.com", "aba.micah@snowflake.com"],
+                f"New Travel Request — {passport_name} — {tv_event_name} ({tv_event_city})",
+                f"""<div style="font-family:Inter,Arial,sans-serif;max-width:600px;">
+                <h2 style="color:#0E2346;">New Speaker Travel Request</h2>
+                <p>A Community Voices speaker has submitted a travel booking request.</p>
+                <table style="border-collapse:collapse;width:100%;margin:16px 0;">
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Traveler</td><td style="padding:8px;border:1px solid #E2E8F0;">{passport_name}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Email</td><td style="padding:8px;border:1px solid #E2E8F0;">{tv_email.strip()}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event</td><td style="padding:8px;border:1px solid #E2E8F0;">{tv_event_name} — {tv_event_city}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event date</td><td style="padding:8px;border:1px solid #E2E8F0;">{tv_event_date}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Flights</td><td style="padding:8px;border:1px solid #E2E8F0;">{fly_from} → {fly_to}<br>{outbound_date} — {return_date} ({seat_class})</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Hotel</td><td style="padding:8px;border:1px solid #E2E8F0;">{hotel_checkin} → {hotel_checkout} ({hotel_pref})</td></tr>
+                </table>
+                <p><a href="https://nhyi-streamlit-snowflake-community-voices--streamlit-app-an16ay.streamlit.app/Navan_Portal" style="display:inline-block;padding:10px 24px;background:#29B5E8;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Open Navan Portal →</a></p>
+                <p style="color:#718096;font-size:0.85rem;">This is an automated notification from the Community Voices platform.</p>
+                </div>""",
+            )
             st.session_state["sp_travel_done"] = True
             st.session_state["sp_travel_uber_code"] = uber_code or ""
             st.rerun()

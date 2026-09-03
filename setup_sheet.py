@@ -115,6 +115,25 @@ TABS = {
     "Program_Resources": [
         "resource_type", "title", "url", "description", "last_updated",
     ],
+    "Travel_Details": [
+        "request_id", "submitted_at", "name", "email",
+        "event_name", "event_city", "event_date",
+        "passport_name", "dob", "passport_no", "passport_exp", "nationality", "phone",
+        "fly_from", "fly_to", "outbound_date", "return_date", "seat_class",
+        "airline_pref", "ff_number",
+        "hotel_checkin", "hotel_checkout", "hotel_pref",
+        "hotel_loyalty", "hotel_notes",
+        "dietary", "emergency_name", "emergency_phone",
+        "notes", "uber_code", "status",
+    ],
+    "Uber_Requests": [
+        "request_id", "submitted_at", "name", "email",
+        "event_name", "event_city", "event_date",
+        "rides_needed", "amount_usd", "notes", "uber_code", "status",
+    ],
+    "Uber_Codes": [
+        "code", "status", "assigned_to_email", "assigned_date", "assigned_tab",
+    ],
 }
 
 

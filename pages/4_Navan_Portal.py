@@ -5,7 +5,7 @@ from datetime import datetime
 import streamlit as st
 import pandas as pd
 from utils.styles import inject_css
-from utils.sheets import read_tab, update_cell, col_letter
+from utils.sheets import read_tab, update_cell, col_letter, send_gmail
 
 st.set_page_config(
     page_title="Navan Travel Portal — Community Voices",
@@ -45,8 +45,8 @@ st.markdown("""
   <div class="eyebrow">Navan Travel Portal</div>
   <h1>Community Voices — Travel Bookings</h1>
   <p>
-    All approved speaker travel requests from the Snowflake Community Voices program.
-    Mark trips as booked once confirmed in Navan.
+    Speaker travel requests submitted through the Community Voices platform.
+    Review details and update booking status as you confirm trips.
   </p>
 </div>
 """, unsafe_allow_html=True)
@@ -55,7 +55,7 @@ st.markdown("""
 @st.cache_data(ttl=90)
 def load_navan_data():
     data = {}
-    for tab in ["Speaker_Applications", "Travel_Details", "Uber_Requests"]:
+    for tab in ["Travel_Details", "Uber_Requests"]:
         try: data[tab] = read_tab(tab)
         except Exception: data[tab] = pd.DataFrame()
     return data
@@ -65,190 +65,254 @@ data = load_navan_data()
 if st.button("Refresh", key="navan_refresh"):
     st.cache_data.clear(); st.rerun()
 
-TRAVEL_KEYWORDS = ["travel", "flight", "hotel", "accommodation", "registration"]
-BOOKING_STATUSES = ["Pending Booking", "Booked", "Confirmed", "Cancelled"]
+BOOKING_STATUSES = ["Pending Booking", "In Progress", "Booked", "Confirmed", "Cancelled"]
 
-# ── Summary row ───────────────────────────────────────────────────────────────
-df_apps = data.get("Speaker_Applications", pd.DataFrame())
 df_travel = data.get("Travel_Details", pd.DataFrame())
 df_uber = data.get("Uber_Requests", pd.DataFrame())
 
-approved_with_travel = pd.DataFrame()
-if not df_apps.empty and "status" in df_apps.columns and "support_types" in df_apps.columns:
-    approved = df_apps[df_apps["status"] == "Approved"]
-    mask = approved["support_types"].str.lower().str.contains("|".join(TRAVEL_KEYWORDS), na=False)
-    approved_with_travel = approved[mask].copy()
+# ── Travel_Details column indices (positional — the tab has no header row yet,
+#    or the header row matches the order written by the Speaker Portal form) ────
+# The Speaker Portal writes rows in this order:
+#  0: request_id, 1: submitted_at, 2: name, 3: email, 4: event_name,
+#  5: event_city, 6: event_date, 7: passport_name, 8: dob, 9: passport_no,
+# 10: passport_exp, 11: nationality, 12: phone, 13: fly_from, 14: fly_to,
+# 15: outbound_date, 16: return_date, 17: seat_class, 18: airline_pref,
+# 19: ff_number, 20: hotel_checkin, 21: hotel_checkout, 22: hotel_pref,
+# 23: hotel_loyalty, 24: hotel_notes, 25: dietary, 26: emergency_name,
+# 27: emergency_phone, 28: notes, 29: uber_code, 30: status
 
-m1,m2,m3,m4 = st.columns(4)
-with m1: st.metric("Travel requests", len(approved_with_travel))
-with m2:
-    booked = 0
-    if "navan_status" in approved_with_travel.columns:
-        booked = (approved_with_travel["navan_status"].str.strip() == "Booked").sum()
-    st.metric("Booked", int(booked))
-with m3:
-    pending_b = len(approved_with_travel) - int(booked)
-    st.metric("Pending booking", pending_b)
-with m4:
-    try:
-        total = pd.to_numeric(approved_with_travel.get("estimated_cost", pd.Series(dtype=str)), errors="coerce").sum()
-        st.metric("Est. total spend", f"${total:,.0f}")
-    except Exception: st.metric("Est. total spend", "—")
+def _tv(row, col_name, default=""):
+    """Safe column accessor for travel rows."""
+    return str(row.get(col_name, default)).strip() if col_name in row.index else default
+
+# ── Summary metrics ──────────────────────────────────────────────────────────
+total_requests = len(df_travel)
+if total_requests > 0 and "status" in df_travel.columns:
+    booked_count = df_travel["status"].str.strip().isin(["Booked", "Confirmed"]).sum()
+    pending_count = total_requests - int(booked_count)
+else:
+    booked_count = 0
+    pending_count = total_requests
+
+m1, m2, m3, m4 = st.columns(4)
+with m1: st.metric("Total requests", total_requests)
+with m2: st.metric("Booked / Confirmed", int(booked_count))
+with m3: st.metric("Pending", int(pending_count))
+with m4: st.metric("Uber requests", len(df_uber))
 
 st.markdown("---")
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-t_trips, t_details, t_uber, t_export = st.tabs([
-    "✈️ Trip Requests", "📋 Speaker Travel Details", "🚗 Uber Requests", "📥 Export"
+t_trips, t_uber, t_export = st.tabs([
+    "✈️ Travel Requests", "🚗 Uber Requests", "📥 Export"
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 1: TRIP REQUESTS
+# TAB 1: TRAVEL REQUESTS (from Travel_Details — the primary view)
 # ══════════════════════════════════════════════════════════════════════════════
 with t_trips:
-    st.markdown("### Approved speaker travel requests")
-    st.markdown("These speakers have been approved and need flights/hotel booked. Mark as **Booked** once confirmed in Navan.")
+    st.markdown("### Speaker travel requests")
+    st.markdown("Each row is a travel request submitted by a speaker. Update the **booking status** as you process each trip.")
 
-    if approved_with_travel.empty:
-        st.info("No pending travel requests at this time.")
+    if df_travel.empty or len(df_travel.columns) < 5:
+        st.info("No travel requests submitted yet. Requests appear here when speakers fill in the Book Your Travel form.")
     else:
-        # Filter
-        fc1,fc2 = st.columns(2)
+        # Filters
+        fc1, fc2 = st.columns(2)
         with fc1:
-            navan_filter = st.multiselect("Filter by Navan status",
-                BOOKING_STATUSES + ["(blank — not yet actioned)"],
-                default=["(blank — not yet actioned)", "Pending Booking"],
-                key="navan_status_filter")
+            status_opts = sorted(df_travel["status"].dropna().unique().tolist()) if "status" in df_travel.columns else []
+            navan_filter = st.multiselect(
+                "Filter by booking status",
+                status_opts or BOOKING_STATUSES,
+                default=[s for s in ["Pending Booking", "In Progress"] if s in (status_opts or BOOKING_STATUSES)],
+                key="nv_status_filter",
+            )
         with fc2:
-            region_filter = st.multiselect("Filter by event city",
-                sorted(approved_with_travel["event_city"].dropna().unique().tolist()) if "event_city" in approved_with_travel.columns else [],
-                key="navan_city_filter")
+            city_col = "event_city" if "event_city" in df_travel.columns else None
+            if city_col:
+                city_opts = sorted(df_travel[city_col].dropna().unique().tolist())
+                city_filter = st.multiselect("Filter by event city", city_opts, key="nv_city_filter")
+            else:
+                city_filter = []
 
-        filtered = approved_with_travel.copy()
-        if region_filter and "event_city" in filtered.columns:
-            filtered = filtered[filtered["event_city"].isin(region_filter)]
+        filtered = df_travel.copy()
+        if navan_filter and "status" in filtered.columns:
+            filtered = filtered[filtered["status"].str.strip().isin(navan_filter)]
+        if city_filter and city_col:
+            filtered = filtered[filtered[city_col].isin(city_filter)]
 
-        for idx, r in filtered.iterrows():
-            sheet_row = idx + 2
-            full_name = f"{r.get('first_name','')} {r.get('last_name','')}".strip()
-            email = r.get("email","")
-            event = r.get("event_name","")
-            city  = r.get("event_city","")
-            ev_date = r.get("event_date_start","")
-            origin = r.get("traveling_from", r.get("city",""))
-            cost   = r.get("estimated_cost","0")
-            support= r.get("support_types","")
-            talk   = r.get("talk_title","")
-            cid    = r.get("confirmation_id","")
-            ns     = r.get("navan_status","").strip() if "navan_status" in r.index else ""
-            n_notes= r.get("navan_notes","").strip() if "navan_notes" in r.index else ""
+        if filtered.empty:
+            st.info("No requests match the selected filters.")
+        else:
+            for idx, r in filtered.iterrows():
+                sheet_row = idx + 2  # 1-indexed header + 0-indexed data
+                req_id     = _tv(r, "request_id")
+                submitted  = _tv(r, "submitted_at")
+                name       = _tv(r, "name")
+                email      = _tv(r, "email")
+                event      = _tv(r, "event_name")
+                city       = _tv(r, "event_city")
+                ev_date    = _tv(r, "event_date")
+                fly_from   = _tv(r, "fly_from")
+                fly_to     = _tv(r, "fly_to")
+                outbound   = _tv(r, "outbound_date")
+                ret_date   = _tv(r, "return_date")
+                seat_class = _tv(r, "seat_class")
+                airline    = _tv(r, "airline_pref")
+                ff         = _tv(r, "ff_number")
+                h_in       = _tv(r, "hotel_checkin")
+                h_out      = _tv(r, "hotel_checkout")
+                h_pref     = _tv(r, "hotel_pref")
+                h_loyalty  = _tv(r, "hotel_loyalty")
+                h_notes    = _tv(r, "hotel_notes")
+                passport   = _tv(r, "passport_name")
+                dob        = _tv(r, "dob")
+                passport_no= _tv(r, "passport_no")
+                passport_exp=_tv(r, "passport_exp")
+                nationality= _tv(r, "nationality")
+                phone      = _tv(r, "phone")
+                dietary    = _tv(r, "dietary")
+                emerg_name = _tv(r, "emergency_name")
+                emerg_phone= _tv(r, "emergency_phone")
+                notes      = _tv(r, "notes")
+                uber_code  = _tv(r, "uber_code")
+                status     = _tv(r, "status", "Pending Booking")
 
-            # Apply navan_filter
-            ns_display = ns if ns else "(blank — not yet actioned)"
-            if navan_filter and ns_display not in navan_filter:
-                continue
+                status_icon = {
+                    "Booked": "🟢", "Confirmed": "✅", "Cancelled": "❌",
+                    "Pending Booking": "🟡", "In Progress": "🔵",
+                }.get(status, "🟡")
 
-            status_icon = {"Booked":"🟢","Confirmed":"✅","Cancelled":"❌","Pending Booking":"🟡"}.get(ns,"🔵")
+                with st.expander(f"{status_icon} **{name}** — {event} ({city}) · {ev_date} · submitted {submitted[:10] if len(submitted)>=10 else submitted}"):
+                    col_info, col_action = st.columns([2, 1])
 
-            with st.expander(f"{status_icon} **{full_name}** — {event} ({city}) · {ev_date}"):
-                col_info, col_action = st.columns([2,1])
-
-                with col_info:
-                    st.markdown(f"""
-                    | Field | Value |
-                    |-------|-------|
-                    | **Traveler** | {full_name} |
-                    | **Email** | {email} |
-                    | **Talk** | {talk} |
-                    | **Event** | {event} |
-                    | **Destination** | {city} |
-                    | **Event date** | {ev_date} |
-                    | **Origin** | {origin} |
-                    | **Support needed** | {support} |
-                    | **Est. cost** | ${cost} |
-                    | **Program ID** | {cid} |
-                    """)
-
-                    # Show travel details if submitted by speaker
-                    if not df_travel.empty and "confirmation_id" in df_travel.columns:
-                        td = df_travel[df_travel["confirmation_id"]==cid]
-                        if not td.empty:
-                            t = td.iloc[0]
-                            st.markdown("**Speaker-submitted travel details:**")
+                    with col_info:
+                        st.markdown("**Trip overview**")
+                        st.markdown(f"""
+| Field | Value |
+|-------|-------|
+| **Traveler** | {name} |
+| **Email** | {email} |
+| **Phone** | {phone} |
+| **Event** | {event} |
+| **Event city** | {city} |
+| **Event date** | {ev_date} |
+""")
+                        st.markdown("**Flight details**")
+                        st.markdown(f"""
+| Field | Value |
+|-------|-------|
+| **From** | {fly_from} |
+| **To** | {fly_to} |
+| **Outbound** | {outbound} |
+| **Return** | {ret_date} |
+| **Class** | {seat_class} |
+| **Airline pref** | {airline or '—'} |
+| **FF number** | {ff or '—'} |
+""")
+                        st.markdown("**Hotel details**")
+                        st.markdown(f"""
+| Field | Value |
+|-------|-------|
+| **Check-in** | {h_in} |
+| **Check-out** | {h_out} |
+| **Preference** | {h_pref} |
+| **Loyalty #** | {h_loyalty or '—'} |
+| **Notes** | {h_notes or '—'} |
+""")
+                        with st.popover("View passport & additional details"):
                             st.markdown(f"""
-                            - **Airline:** {t.get('airline','')} · Flight: {t.get('flight_number','')}
-                            - **Outbound:** {t.get('departure_city','')} → {t.get('arrival_city','')} on {t.get('departure_datetime','')}
-                            - **Return:** {t.get('return_flight_number','')} on {t.get('return_departure_datetime','')}
-                            - **Hotel:** {t.get('hotel_name','')} · Check-in: {t.get('hotel_checkin','')} → {t.get('hotel_checkout','')}
-                            """)
+- **Passport name:** {passport}
+- **DOB:** {dob}
+- **Passport #:** {passport_no or '—'}
+- **Passport exp:** {passport_exp or '—'}
+- **Nationality:** {nationality or '—'}
+- **Dietary:** {dietary or '—'}
+- **Emergency contact:** {emerg_name or '—'} ({emerg_phone or '—'})
+- **Speaker notes:** {notes or '—'}
+- **Uber code issued:** {uber_code or '—'}
+""")
 
-                    # Navan email template
-                    navan_email = f"""Hi Navan team,
+                        # Pre-filled email for Navan team
+                        navan_email = f"""Hi Navan team,
 
 Please book the following trip for a Snowflake Community Voices speaker:
 
 TRAVELER
-Name: {full_name}
+Name: {passport}
 Email: {email}
-Program reference: {cid}
+Phone: {phone}
+Nationality: {nationality}
 
-TRIP
-Event: {event}
-Destination: {city}
-Event date: {ev_date}
-Origin: {origin}
-Support needed: {support}
-Budget: ~${cost} USD
+FLIGHTS
+From: {fly_from}
+To: {fly_to}
+Outbound: {outbound}
+Return: {ret_date}
+Preferred class: {seat_class}
+Airline preference: {airline or 'None'}
+Frequent flyer: {ff or 'None'}
 
-TALK
-{talk}
+HOTEL
+Check-in: {h_in}
+Check-out: {h_out}
+Preference: {h_pref}
+Loyalty: {h_loyalty or 'None'}
+Special requirements: {h_notes or 'None'}
+
+EVENT
+{event} — {city} — {ev_date}
+
+ADDITIONAL
+Dietary: {dietary or 'None'}
+Emergency contact: {emerg_name or 'None'} ({emerg_phone or 'None'})
+Speaker notes: {notes or 'None'}
 
 Please confirm booking details by reply.
 
 Regards,
 Snowflake Community Voices Team"""
 
-                    st.text_area("Navan booking email (copy & send)", value=navan_email,
-                        height=240, key=f"nv_email_{cid}")
+                        st.text_area("Navan booking email (copy & send)", value=navan_email,
+                            height=240, key=f"nv_email_{req_id}")
 
-                with col_action:
-                    new_ns = st.selectbox("Navan booking status",
-                        ["(not actioned)"] + BOOKING_STATUSES,
-                        index=(BOOKING_STATUSES.index(ns)+1 if ns in BOOKING_STATUSES else 0),
-                        key=f"nv_ns_{cid}")
-                    new_nn = st.text_area("Navan notes (confirmation #, PNR, etc.)",
-                        value=n_notes, height=80, key=f"nv_nn_{cid}")
-                    if st.button("Save", key=f"nv_save_{cid}", type="primary"):
-                        final_ns = "" if new_ns == "(not actioned)" else new_ns
-                        ns_col  = col_letter(df_apps, "navan_status") if "navan_status" in df_apps.columns else "W"
-                        nn_col  = col_letter(df_apps, "navan_notes")  if "navan_notes"  in df_apps.columns else "X"
-                        ok1 = update_cell("Speaker_Applications", sheet_row, ns_col, final_ns)
-                        ok2 = update_cell("Speaker_Applications", sheet_row, nn_col, new_nn)
-                        if ok1 and ok2:
-                            st.success("Saved!"); st.cache_data.clear()
-                        else:
-                            st.error("Save failed — check Sheets connection.")
+                    with col_action:
+                        st.markdown("**Update booking**")
+                        new_status = st.selectbox(
+                            "Booking status",
+                            BOOKING_STATUSES,
+                            index=BOOKING_STATUSES.index(status) if status in BOOKING_STATUSES else 0,
+                            key=f"nv_st_{req_id}",
+                        )
+                        navan_ref = st.text_input(
+                            "Navan reference / PNR",
+                            placeholder="NAV-123456",
+                            key=f"nv_ref_{req_id}",
+                        )
+                        navan_notes = st.text_area(
+                            "Booking notes",
+                            height=80,
+                            placeholder="Flight confirmed, hotel pending...",
+                            key=f"nv_notes_{req_id}",
+                        )
+                        if st.button("Save", key=f"nv_save_{req_id}", type="primary", use_container_width=True):
+                            # Update the status column in Travel_Details
+                            status_col = col_letter(df_travel, "status") if "status" in df_travel.columns else "AE"
+                            ok = update_cell("Travel_Details", sheet_row, status_col, new_status)
+                            if ok:
+                                st.success(f"Status updated to **{new_status}**")
+                                st.cache_data.clear()
+                            else:
+                                st.error("Save failed — check Sheets connection.")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 2: SPEAKER TRAVEL DETAILS
-# ══════════════════════════════════════════════════════════════════════════════
-with t_details:
-    st.markdown("### Travel details submitted by speakers")
-    st.markdown("Speakers fill in their flight and hotel details in the Speaker Portal. They appear here for reference.")
-
-    if df_travel.empty or len(df_travel.columns) < 3:
-        st.info("No travel details submitted yet.")
-    else:
-        st.dataframe(df_travel, use_container_width=True, hide_index=True)
-
-        # Export
-        csv = df_travel.to_csv(index=False).encode()
-        st.download_button("Export travel details CSV", data=csv,
-            file_name=f"travel_details_{datetime.now().strftime('%Y%m%d')}.csv",
+        st.markdown("---")
+        csv_t = df_travel.to_csv(index=False).encode()
+        st.download_button("Export all travel requests CSV", data=csv_t,
+            file_name=f"travel_requests_{datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3: UBER REQUESTS
+# TAB 2: UBER REQUESTS
 # ══════════════════════════════════════════════════════════════════════════════
 with t_uber:
     st.markdown("### Uber gift card requests")
@@ -257,38 +321,48 @@ with t_uber:
     if df_uber.empty or len(df_uber.columns) < 3:
         st.info("No Uber requests yet.")
     else:
-        # Mark as fulfilled
         for idx, row in df_uber.iterrows():
             sheet_row = idx + 2
-            name  = row.get("speaker_name","")
-            email = row.get("speaker_email","")
-            ev    = row.get("event_name","")
-            city  = row.get("event_city","")
-            rides = row.get("rides_needed","")
-            amt   = row.get("amount_requested_usd","")
-            status_u = row.get("status","Pending")
-            rid   = row.get("request_id","")
+            # Use positional fallback for column names
+            cols = list(row.index)
+            name     = str(row.iloc[2]).strip() if len(cols) > 2 else ""
+            email    = str(row.iloc[3]).strip() if len(cols) > 3 else ""
+            ev       = str(row.iloc[4]).strip() if len(cols) > 4 else ""
+            city     = str(row.iloc[5]).strip() if len(cols) > 5 else ""
+            ev_date  = str(row.iloc[6]).strip() if len(cols) > 6 else ""
+            rides    = str(row.iloc[7]).strip() if len(cols) > 7 else ""
+            amt      = str(row.iloc[8]).strip() if len(cols) > 8 else ""
+            ub_notes = str(row.iloc[9]).strip() if len(cols) > 9 else ""
+            ub_code  = str(row.iloc[10]).strip() if len(cols) > 10 else ""
+            status_u = str(row.iloc[11]).strip() if len(cols) > 11 else "Pending"
+            rid      = str(row.iloc[0]).strip() if len(cols) > 0 else str(idx)
 
-            icon = "🟢" if status_u=="Fulfilled" else "🟡"
-            with st.expander(f"{icon} **{name}** — {ev} ({city}) · {rides} ride(s) · ${amt}"):
-                sc1,sc2 = st.columns([2,1])
+            icon = {"Fulfilled": "🟢", "Pending": "🟡"}.get(status_u.split("—")[0].strip(), "🟡")
+            with st.expander(f"{icon} **{name}** — {ev} ({city}) · {rides} · ${amt}"):
+                sc1, sc2 = st.columns([2, 1])
                 with sc1:
                     st.markdown(f"""
-                    | | |
-                    |--|--|
-                    | **Speaker** | {name} ({email}) |
-                    | **Event** | {ev} — {city} |
-                    | **Rides needed** | {rides} |
-                    | **Amount requested** | ${amt} |
-                    | **Notes** | {row.get('notes','')} |
-                    | **Request ID** | {rid} |
-                    """)
+| | |
+|--|--|
+| **Speaker** | {name} ({email}) |
+| **Event** | {ev} — {city} — {ev_date} |
+| **Rides needed** | {rides} |
+| **Amount** | ${amt} |
+| **Notes** | {ub_notes or '—'} |
+| **Uber code issued** | {ub_code or '—'} |
+| **Status** | {status_u} |
+""")
                 with sc2:
-                    new_u_status = st.selectbox("Status",["Pending","Fulfilled","Declined"],
-                        index=["Pending","Fulfilled","Declined"].index(status_u) if status_u in ["Pending","Fulfilled","Declined"] else 0,
+                    uber_statuses = ["Pending", "Fulfilled", "Pending — No codes", "Declined"]
+                    cur_idx = 0
+                    for i, s in enumerate(uber_statuses):
+                        if status_u.strip() == s:
+                            cur_idx = i; break
+                    new_u_status = st.selectbox("Status", uber_statuses, index=cur_idx,
                         key=f"uber_st_{rid}")
                     if st.button("Update", key=f"uber_upd_{rid}", type="primary"):
-                        sc = col_letter(df_uber, "status")
+                        # Status is the last column
+                        sc = chr(ord("A") + len(cols) - 1) if len(cols) <= 26 else "L"
                         if update_cell("Uber_Requests", sheet_row, sc, new_u_status):
                             st.success("Updated!"); st.cache_data.clear(); st.rerun()
                         else:
@@ -301,57 +375,44 @@ with t_uber:
             mime="text/csv")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 4: EXPORT (NAVAN BATCH)
+# TAB 3: EXPORT (NAVAN BATCH)
 # ══════════════════════════════════════════════════════════════════════════════
 with t_export:
-    st.markdown("### Export all pending trips for Navan")
-    st.markdown("Download a Navan-compatible CSV of all approved speaker trips that haven't been booked yet.")
+    st.markdown("### Export pending trips for Navan")
+    st.markdown("Download a CSV of all travel requests that haven't been booked yet — ready to import into Navan.")
 
-    if approved_with_travel.empty:
+    if df_travel.empty:
         st.info("No trips to export.")
     else:
-        # Build export
-        navan_rows = []
-        for _, r in approved_with_travel.iterrows():
-            ns = r.get("navan_status","").strip() if "navan_status" in r.index else ""
-            if ns in ("Booked","Confirmed"):
-                continue  # already handled
-            full_name = f"{r.get('first_name','')} {r.get('last_name','')}".strip()
-            # Check if speaker submitted travel details
-            td_row = {}
-            if not df_travel.empty and "confirmation_id" in df_travel.columns:
-                td = df_travel[df_travel["confirmation_id"]==r.get("confirmation_id","")]
-                if not td.empty: td_row = td.iloc[0].to_dict()
+        pending = df_travel.copy()
+        if "status" in pending.columns:
+            pending = pending[~pending["status"].str.strip().isin(["Booked", "Confirmed", "Cancelled"])]
 
-            navan_rows.append({
-                "traveler_name":      full_name,
-                "traveler_email":     r.get("email",""),
-                "program_id":         r.get("confirmation_id",""),
-                "trip_purpose":       f"Speaking: {r.get('talk_title','')}",
-                "event_name":         r.get("event_name",""),
-                "origin_city":        r.get("traveling_from", r.get("city","")),
-                "destination_city":   r.get("event_city",""),
-                "event_date":         r.get("event_date_start",""),
-                "return_date":        r.get("event_date_end", r.get("event_date_start","")),
-                "support_requested":  r.get("support_types",""),
-                "budget_usd":         r.get("estimated_cost","0"),
-                "speaker_airline":    td_row.get("airline",""),
-                "speaker_flight_no":  td_row.get("flight_number",""),
-                "speaker_hotel":      td_row.get("hotel_name",""),
-                "speaker_hotel_checkin": td_row.get("hotel_checkin",""),
-                "speaker_hotel_checkout":td_row.get("hotel_checkout",""),
-                "navan_status":       ns or "Pending Booking",
-            })
-
-        if not navan_rows:
-            st.info("All approved trips are already booked or confirmed.")
+        if pending.empty:
+            st.info("All trips are already booked, confirmed, or cancelled.")
         else:
-            navan_df = pd.DataFrame(navan_rows)
-            st.markdown(f"**{len(navan_rows)} trip(s) pending booking**")
-            st.dataframe(navan_df, use_container_width=True, hide_index=True)
-            csv_n = navan_df.to_csv(index=False).encode()
+            # Build clean export
+            export_cols = []
+            col_map = {
+                "name": "traveler_name", "email": "traveler_email",
+                "event_name": "event", "event_city": "destination",
+                "event_date": "event_date", "fly_from": "origin_airport",
+                "fly_to": "dest_airport", "outbound_date": "depart",
+                "return_date": "return", "seat_class": "class",
+                "airline_pref": "airline_pref", "hotel_checkin": "hotel_in",
+                "hotel_checkout": "hotel_out", "hotel_pref": "hotel_pref",
+                "phone": "phone", "status": "booking_status",
+            }
+            export_df = pd.DataFrame()
+            for src, dst in col_map.items():
+                if src in pending.columns:
+                    export_df[dst] = pending[src]
+
+            st.markdown(f"**{len(export_df)} trip(s) pending booking**")
+            st.dataframe(export_df, use_container_width=True, hide_index=True)
+            csv_n = export_df.to_csv(index=False).encode()
             st.download_button(
-                f"Download Navan batch CSV ({len(navan_rows)} trips)",
+                f"Download Navan batch CSV ({len(export_df)} trips)",
                 data=csv_n,
                 file_name=f"navan_batch_{datetime.now().strftime('%Y%m%d')}.csv",
                 mime="text/csv",
