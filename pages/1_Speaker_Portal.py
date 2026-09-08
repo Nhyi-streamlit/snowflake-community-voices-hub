@@ -306,7 +306,7 @@ with tab_resources:
         st.markdown("#### Slide Templates")
         st.info(
             "Slide templates are shared with approved speakers via email. "
-            "Request yours by emailing **community@snowflake.com** with subject: "
+            "Request yours by emailing **aba.micah@snowflake.com** with subject: "
             "*Slide template request — [Your Name]*",
             icon="📊",
         )
@@ -314,28 +314,27 @@ with tab_resources:
         with ca:
             st.markdown("""<div class="info-card"><h4>Standard Conference Template</h4>
             <p>16:9 dark theme · title slide, about me, agenda, content slides, closing with QR code placeholder.<br>
-            <strong>Contact community@snowflake.com to request access.</strong></p></div>""", unsafe_allow_html=True)
+            <strong>Contact aba.micah@snowflake.com to request access.</strong></p></div>""", unsafe_allow_html=True)
         with cb:
             st.markdown("""<div class="info-card"><h4>Lightning Talk Template (15 min)</h4>
             <p>8 slides max · optimised for fast-paced conference sessions and meetup lightning rounds.<br>
-            <strong>Contact community@snowflake.com to request access.</strong></p></div>""", unsafe_allow_html=True)
+            <strong>Contact aba.micah@snowflake.com to request access.</strong></p></div>""", unsafe_allow_html=True)
         st.markdown("**Bio format:** 50–100 words · role, company, speciality, community membership, LinkedIn URL")
 
     with r_prep:
         for phase, items in [
-            ("6–8 weeks before",["Submit interest from the Browse Events tab","Confirm session length and A/V with organizers","Register for event (program may cover ticket)"]),
+            ("6–8 weeks before",["Submit interest from the Browse Events tab","Confirm session length and A/V with organizers"]),
             ("3–4 weeks before",["Draft slides using Snowflake template","Full rehearsal end-to-end","Submit bio and headshot","Generate feedback QR code (Talk Feedback tab)"]),
             ("Day of",["Arrive 30 min early — test A/V and clicker","QR code on last slide","Stay for Q&A"]),
             ("After",["Share slides publicly","Post on social — tag @Snowflake + #SnowflakeCommunity","Review feedback scores from Talk Feedback tab"]),
         ]:
             with st.expander(phase):
                 for item in items: st.markdown(f"☐ {item}")
-        st.info("To request a **1:1 speaker coaching session**, email community@snowflake.com with subject: *Speaker coaching — [Your Name] — [Event]*")
 
     with r_faq:
         for q, a in [
             ("How do I sign up to speak?","Browse open slots on the Browse Events tab and click 'I'm interested in this slot'."),
-            ("What support can I receive?","Travel booking via Navan, hotel, event registration, swag kit, speaker coaching, and co-promotion on Snowflake social channels."),
+            ("What support can I receive?","Travel booking via Navan (flights and hotel), an Uber gift card for local transport, and co-promotion on Snowflake social channels."),
             ("How do I book my travel?","Use the Book Your Travel tab and fill in the booking request form. Navan will arrange flights and hotel within 2 business days. You'll also receive an Uber code for local transport."),
             ("Can I sign up for multiple events?","Yes — submit a separate sign-up for each event."),
             ("Do I need approval for slide content?","No pre-approval needed, but follow brand guidelines and don't discuss roadmap or pricing."),
@@ -437,7 +436,7 @@ with tab_travel:
                 </div>
             </div>""", unsafe_allow_html=True)
         else:
-            st.markdown('<div class="success-box"><h2>Travel request received!</h2><p>Navan will arrange your flights and hotel and send your itinerary within 2 business days.</p><p style="color:#E53E3E;"><strong>No Uber codes available right now.</strong> Contact community@snowflake.com to receive one.</p></div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box"><h2>Travel request received!</h2><p>Navan will arrange your flights and hotel and send your itinerary within 2 business days.</p><p style="color:#E53E3E;"><strong>No Uber codes available right now.</strong> Contact aba.micah@snowflake.com to receive one.</p></div>', unsafe_allow_html=True)
         if st.button("Submit another travel request", key="sp_travel_reset"):
             st.session_state.pop("sp_travel_done", None)
             st.session_state.pop("sp_travel_uber_code", None)
@@ -653,7 +652,7 @@ with tab_travel:
             st.session_state["sp_travel_uber_code"] = uber_code or ""
             st.rerun()
         else:
-            st.error("Could not save. Please try again or email community@snowflake.com.")
+            st.error("Could not save. Please try again or email aba.micah@snowflake.com.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: UBER REQUEST
@@ -676,7 +675,7 @@ with tab_uber:
                 </div>
             </div>""", unsafe_allow_html=True)
         else:
-            st.markdown('<div class="success-box"><h2>Uber request submitted!</h2><p style="color:#E53E3E;"><strong>No Uber codes available right now.</strong> Contact community@snowflake.com to receive one.</p></div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box"><h2>Uber request submitted!</h2><p style="color:#E53E3E;"><strong>No Uber codes available right now.</strong> Contact aba.micah@snowflake.com to receive one.</p></div>', unsafe_allow_html=True)
         if st.button("Submit another request", key="sp_uber_reset"):
             st.session_state.pop("sp_uber_done", None)
             st.session_state.pop("sp_uber_code", None)
@@ -702,15 +701,15 @@ with tab_uber:
             key="ub_rides")
     with uc2:
         amount = st.number_input("Estimated amount (USD)",
-            min_value=5, max_value=500, step=5, value=40, key="ub_amount")
+            min_value=5, max_value=500, step=5, value=100, key="ub_amount")
     ub_notes = st.text_area(
         "Notes (pickup/dropoff locations, special requirements)",
         height=80, placeholder="Pickup: hotel downtown -> drop-off: venue address...",
         key="ub_notes")
 
     st.info(
-        "Standard Uber gift card allowance is **$40 per event** (round trip). "
-        "Requests above $40 require a brief note explaining the need.",
+        "Standard Uber gift card allowance is **$100 per event** (round trip). "
+        "Requests above $100 require a brief note explaining the need.",
         icon="💳",
     )
 
