@@ -43,20 +43,21 @@ st.markdown("""
 
 # ── Tab order — put Feedback first if audience QR mode ─────────────────────────
 if _audience_mode:
-    TAB_NAMES = ["⭐ Talk Feedback", "🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "📅 Upcoming Events", "📦 Resources"]
+    TAB_NAMES = ["⭐ Talk Feedback", "🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources"]
 else:
-    TAB_NAMES = ["🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "📅 Upcoming Events", "📦 Resources", "⭐ Talk Feedback"]
+    TAB_NAMES = ["🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources", "⭐ Talk Feedback"]
 
 tabs = st.tabs(TAB_NAMES)
 
 # Map names to tab objects
-tab_map       = dict(zip(TAB_NAMES, tabs))
-tab_browse    = tab_map.get("🎤 Available Speaking Slots")
-tab_travel    = tab_map.get("✈️ Book Your Travel")
-tab_uber      = tab_map.get("🚗 Uber Request")
-tab_upcoming  = tab_map.get("📅 Upcoming Events")
-tab_resources = tab_map.get("📦 Resources")
-tab_feedback  = tab_map.get("⭐ Talk Feedback")
+tab_map        = dict(zip(TAB_NAMES, tabs))
+tab_browse     = tab_map.get("🎤 Available Speaking Slots")
+tab_travel     = tab_map.get("✈️ Book Your Travel")
+tab_uber       = tab_map.get("🚗 Uber Request")
+tab_reimburse  = tab_map.get("💰 Reimbursement")
+tab_upcoming   = tab_map.get("📅 Upcoming Events")
+tab_resources  = tab_map.get("📦 Resources")
+tab_feedback   = tab_map.get("⭐ Talk Feedback")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: AVAILABLE SPEAKING SLOTS
@@ -276,8 +277,6 @@ with tab_upcoming:
             st.caption(f"{len(upcoming_df)} upcoming event(s)")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB: PAST EVENTS
-# ══════════════════════════════════════════════════════════════════════════════
 # TAB: RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_resources:
@@ -338,6 +337,7 @@ with tab_resources:
             ("How do I book my travel?","Use the Book Your Travel tab and fill in the booking request form. Navan will arrange flights and hotel within 2 business days. You'll also receive an Uber code for local transport."),
             ("Can I sign up for multiple events?","Yes — submit a separate sign-up for each event."),
             ("Do I need approval for slide content?","No pre-approval needed, but follow brand guidelines and don't discuss roadmap or pricing."),
+            ("How do I get reimbursed for out-of-pocket expenses?","Use the Reimbursement tab to submit your expenses. You'll receive a confirmation ID. Email your receipts to aba.micah@snowflake.com with your confirmation ID as the subject. Reimbursements are processed within 10 business days."),
         ]:
             with st.expander(q): st.markdown(a)
 
@@ -734,3 +734,286 @@ with tab_uber:
             st.rerun()
         else:
             st.error("Could not submit. Please try again.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB: REIMBURSEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_reimburse:
+    import uuid as _uuid
+
+    st.markdown("### Expense reimbursement")
+    st.markdown(
+        "Submit out-of-pocket expenses for your Community Voices speaking engagement. "
+        "You'll receive a confirmation ID — use it as the subject when emailing your receipts."
+    )
+
+    # ── Success state ─────────────────────────────────────────────────────────
+    if st.session_state.get("sp_reimb_done"):
+        conf_id_done = st.session_state.get("sp_reimb_conf_id", "")
+        st.markdown(f"""<div class="success-box">
+            <h2>Reimbursement request submitted!</h2>
+            <p>We'll review your claim and process it within <strong>10 business days</strong>.</p>
+            {'<div style="margin-top:16px;padding:16px;background:#EBF8FF;border:2px solid #3182CE;border-radius:8px;text-align:center;"><div style="font-size:0.75rem;color:#2B6CB0;text-transform:uppercase;letter-spacing:0.05em;">Your Confirmation ID</div><div style="font-size:1.4rem;font-weight:700;color:#2B6CB0;font-family:monospace;margin-top:4px;">' + conf_id_done + '</div></div>' if conf_id_done else ''}
+            <p style="margin-top:16px;">
+                <strong>Next step:</strong> Email your receipts to
+                <a href="mailto:aba.micah@snowflake.com" style="color:#29B5E8;">aba.micah@snowflake.com</a>
+                with subject: <em>Receipts — {conf_id_done}</em>
+            </p>
+        </div>""", unsafe_allow_html=True)
+        if st.button("Submit another reimbursement", key="sp_reimb_reset"):
+            st.session_state.pop("sp_reimb_done", None)
+            st.session_state.pop("sp_reimb_conf_id", None)
+            st.session_state.pop("sp_reimb_expenses", None)
+            st.rerun()
+        st.stop()
+
+    # ── Initialise dynamic expense rows ───────────────────────────────────────
+    if "sp_reimb_expenses" not in st.session_state:
+        st.session_state["sp_reimb_expenses"] = [{"id": _uuid.uuid4().hex[:6]}]
+
+    EXPENSE_CATEGORIES = ["Meals", "Ground transport", "Accommodation", "Registration fee", "Other"]
+    CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "SGD", "Other"]
+
+    # ── Section 1: Your details ───────────────────────────────────────────────
+    st.markdown('<div class="step-label">Section 1 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Your details</div>', unsafe_allow_html=True)
+    rb1, rb2 = st.columns(2)
+    with rb1:
+        rb_name  = st.text_input("Full name *", key="rb_name")
+    with rb2:
+        rb_email = st.text_input("Email *", key="rb_email")
+    rb3, rb4, rb5 = st.columns(3)
+    with rb3:
+        rb_event = st.text_input("Event name *", placeholder="Data Summit NYC", key="rb_event")
+    with rb4:
+        rb_city  = st.text_input("Event city *", placeholder="New York", key="rb_city")
+    with rb5:
+        rb_date  = st.text_input("Event date(s) *", placeholder="2026-10-15", key="rb_date")
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+    # ── Section 2: Expenses ───────────────────────────────────────────────────
+    st.markdown('<div class="step-label">Section 2 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Expense items</div>', unsafe_allow_html=True)
+    st.caption("Add one row per receipt. You can remove rows you don't need.")
+
+    expenses = st.session_state["sp_reimb_expenses"]
+    rows_to_remove = []
+
+    for idx, exp in enumerate(expenses):
+        eid = exp["id"]
+        col_cat, col_desc, col_edate, col_amt, col_cur, col_del = st.columns([2, 3, 2, 1.5, 1.5, 0.8])
+        with col_cat:
+            st.selectbox(
+                "Category" if idx == 0 else " ",
+                EXPENSE_CATEGORIES,
+                key=f"rb_cat_{eid}",
+                label_visibility="visible" if idx == 0 else "collapsed",
+            )
+        with col_desc:
+            st.text_input(
+                "Description" if idx == 0 else " ",
+                placeholder="e.g. Airport taxi",
+                key=f"rb_desc_{eid}",
+                label_visibility="visible" if idx == 0 else "collapsed",
+            )
+        with col_edate:
+            st.text_input(
+                "Date" if idx == 0 else " ",
+                placeholder="2026-10-15",
+                key=f"rb_edate_{eid}",
+                label_visibility="visible" if idx == 0 else "collapsed",
+            )
+        with col_amt:
+            st.number_input(
+                "Amount" if idx == 0 else " ",
+                min_value=0.0, step=0.01, value=0.0,
+                key=f"rb_amt_{eid}",
+                label_visibility="visible" if idx == 0 else "collapsed",
+            )
+        with col_cur:
+            st.selectbox(
+                "Currency" if idx == 0 else " ",
+                CURRENCIES,
+                key=f"rb_cur_{eid}",
+                label_visibility="visible" if idx == 0 else "collapsed",
+            )
+        with col_del:
+            if idx == 0:
+                st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+            if len(expenses) > 1:
+                if st.button("✕", key=f"rb_del_{eid}", help="Remove this row"):
+                    rows_to_remove.append(eid)
+
+    if rows_to_remove:
+        st.session_state["sp_reimb_expenses"] = [e for e in expenses if e["id"] not in rows_to_remove]
+        st.rerun()
+
+    if st.button("+ Add expense", key="rb_add_row"):
+        st.session_state["sp_reimb_expenses"].append({"id": _uuid.uuid4().hex[:6]})
+        st.rerun()
+
+    # Running total
+    total_usd = 0.0
+    expense_lines = []
+    for exp in st.session_state["sp_reimb_expenses"]:
+        eid = exp["id"]
+        cat  = st.session_state.get(f"rb_cat_{eid}", "")
+        desc = st.session_state.get(f"rb_desc_{eid}", "")
+        edate= st.session_state.get(f"rb_edate_{eid}", "")
+        amt  = st.session_state.get(f"rb_amt_{eid}", 0.0) or 0.0
+        cur  = st.session_state.get(f"rb_cur_{eid}", "USD")
+        if amt > 0:
+            expense_lines.append(f"{cat} · {desc} · {edate} · {amt:.2f} {cur}")
+            if cur == "USD":
+                total_usd += amt
+
+    st.markdown(
+        f"<div style='text-align:right;margin-top:8px;font-size:1.05rem;'>"
+        f"<strong>Total (USD items): ${total_usd:,.2f}</strong>"
+        f"<span style='color:#718096;font-size:0.8rem;'> — non-USD amounts shown separately</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+    # ── Section 3: Payment details ────────────────────────────────────────────
+    st.markdown('<div class="step-label">Section 3 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Payment details</div>', unsafe_allow_html=True)
+
+    pay_method = st.radio(
+        "How would you like to be paid? *",
+        ["PayPal", "Bank transfer"],
+        horizontal=True,
+        key="rb_pay_method",
+    )
+
+    if pay_method == "PayPal":
+        rb_paypal = st.text_input("PayPal email *", placeholder="your@paypal.com", key="rb_paypal")
+        rb_bank_name = rb_account = rb_routing = ""
+    else:
+        st.markdown("**Bank transfer details**")
+        bk1, bk2 = st.columns(2)
+        with bk1:
+            rb_bank_name = st.text_input("Bank name *", placeholder="Chase, HSBC, Barclays...", key="rb_bank_name")
+        with bk2:
+            rb_account_holder = st.text_input("Account holder name *", key="rb_account_holder")
+        bk3, bk4 = st.columns(2)
+        with bk3:
+            rb_account = st.text_input("Account number *", key="rb_account")
+        with bk4:
+            rb_routing = st.text_input(
+                "Routing / SWIFT / IBAN *",
+                placeholder="For US: routing number. International: SWIFT or IBAN",
+                key="rb_routing",
+            )
+        rb_paypal = ""
+
+    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+    # ── Section 4: Notes ──────────────────────────────────────────────────────
+    st.markdown('<div class="step-label">Section 4 of 4</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Notes & receipts</div>', unsafe_allow_html=True)
+
+    rb_notes = st.text_area(
+        "Any notes for the reviewer?",
+        height=80,
+        placeholder="E.g. Flight was delayed so I had to book a separate taxi; hotel receipt is included...",
+        key="rb_notes",
+    )
+
+    st.info(
+        "After submitting, email your receipts to **aba.micah@snowflake.com** "
+        "with subject: **Receipts — [Your Confirmation ID]**. "
+        "Reimbursements are processed within **10 business days** of receipt approval.",
+        icon="🧾",
+    )
+
+    # ── Validation & submit ───────────────────────────────────────────────────
+    pay_ok = (rb_paypal.strip() != "") if pay_method == "PayPal" else all([
+        st.session_state.get("rb_bank_name",""),
+        st.session_state.get("rb_account_holder",""),
+        st.session_state.get("rb_account",""),
+        st.session_state.get("rb_routing",""),
+    ])
+    has_expenses = len(expense_lines) > 0
+    required_reimb = all([rb_name, rb_email, rb_event, rb_city, rb_date]) and pay_ok and has_expenses
+
+    if not all([rb_name, rb_email, rb_event, rb_city, rb_date]):
+        st.caption("Complete all required fields in Section 1 (*) to submit.")
+    elif not has_expenses:
+        st.caption("Add at least one expense with an amount greater than 0.")
+    elif not pay_ok:
+        st.caption("Complete your payment details in Section 3 to submit.")
+
+    if st.button("Submit Reimbursement Request", type="primary", use_container_width=True,
+                 disabled=not required_reimb, key="rb_submit"):
+
+        reimb_id = "REIMB-2026-" + _uuid.uuid4().hex[:8].upper()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        expenses_summary = "\n".join(expense_lines) if expense_lines else "—"
+        total_str = f"${total_usd:,.2f} USD"
+
+        # Payment info
+        if pay_method == "PayPal":
+            bank_name_val = ""
+            bank_account_val = ""
+            bank_routing_val = ""
+            paypal_val = rb_paypal.strip()
+        else:
+            bank_name_val    = st.session_state.get("rb_bank_name", "")
+            bank_account_val = st.session_state.get("rb_account", "")
+            bank_routing_val = st.session_state.get("rb_routing", "")
+            paypal_val = ""
+
+        sheet_row = [
+            reimb_id, now,
+            rb_name.strip(), rb_email.strip(),
+            rb_event, rb_city, rb_date,
+            expenses_summary,
+            total_str,
+            pay_method, paypal_val,
+            bank_name_val, bank_account_val, bank_routing_val,
+            rb_notes or "",
+            "Pending — awaiting email",
+            "Pending Review",
+        ]
+
+        if append_row("Reimbursements", sheet_row):
+            # Build expense table rows for email
+            expense_rows_html = "".join(
+                f"<tr><td style='padding:6px 8px;border:1px solid #E2E8F0;'>{line}</td></tr>"
+                for line in expense_lines
+            )
+            payment_detail = (
+                f"PayPal: {paypal_val}" if pay_method == "PayPal"
+                else f"Bank transfer — {bank_name_val} / {bank_account_val} / {bank_routing_val}"
+            )
+
+            send_gmail(
+                ["aba.micah@snowflake.com"],
+                f"Reimbursement Request — {rb_name.strip()} — {rb_event} ({rb_city})",
+                f"""<div style="font-family:Inter,Arial,sans-serif;max-width:640px;">
+                <h2 style="color:#0E2346;">New Expense Reimbursement Request</h2>
+                <table style="border-collapse:collapse;width:100%;margin:12px 0;">
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;width:30%;">Confirmation ID</td><td style="padding:8px;border:1px solid #E2E8F0;font-family:monospace;font-weight:700;">{reimb_id}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Speaker</td><td style="padding:8px;border:1px solid #E2E8F0;">{rb_name.strip()} ({rb_email.strip()})</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event</td><td style="padding:8px;border:1px solid #E2E8F0;">{rb_event} — {rb_city} ({rb_date})</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Total (USD)</td><td style="padding:8px;border:1px solid #E2E8F0;font-weight:700;">{total_str}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Payment</td><td style="padding:8px;border:1px solid #E2E8F0;">{payment_detail}</td></tr>
+                </table>
+                <h4 style="color:#0E2346;margin-top:16px;">Expense items</h4>
+                <table style="border-collapse:collapse;width:100%;margin-bottom:12px;">
+                {expense_rows_html}
+                </table>
+                {f'<p><strong>Notes:</strong> {rb_notes}</p>' if rb_notes else ''}
+                <p style="color:#718096;font-size:0.85rem;margin-top:16px;">
+                    Receipts expected via email with subject: <em>Receipts — {reimb_id}</em><br>
+                    This is an automated notification from the Community Voices platform.
+                </p>
+                </div>""",
+            )
+            st.session_state["sp_reimb_done"] = True
+            st.session_state["sp_reimb_conf_id"] = reimb_id
+            st.rerun()
+        else:
+            st.error("Could not save your request. Please try again or email aba.micah@snowflake.com.")
