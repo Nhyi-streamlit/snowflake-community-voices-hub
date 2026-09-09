@@ -220,6 +220,61 @@ def send_gmail(to: list[str], subject: str, body_html: str) -> bool:
         return False
 
 
+def send_gmail_with_attachments(
+    to: list[str],
+    subject: str,
+    body_html: str,
+    attachments: list[dict] | None = None,
+) -> bool:
+    """Send an email with optional file attachments via Gmail API.
+
+    `attachments` is a list of dicts: {"filename": str, "data": bytes, "mime_type": str}
+    e.g. {"filename": "receipt.pdf", "data": b"...", "mime_type": "application/pdf"}
+    Returns True on success.
+    """
+    import base64
+    import mimetypes
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.base import MIMEBase
+    from email import encoders
+
+    try:
+        token = get_access_token()
+
+        if attachments:
+            msg = MIMEMultipart()
+            msg["To"] = ", ".join(to)
+            msg["Subject"] = subject
+            msg.attach(MIMEText(body_html, "html"))
+            for att in attachments:
+                main_type, sub_type = att.get("mime_type", "application/octet-stream").split("/", 1)
+                part = MIMEBase(main_type, sub_type)
+                part.set_payload(att["data"])
+                encoders.encode_base64(part)
+                part.add_header(
+                    "Content-Disposition",
+                    "attachment",
+                    filename=att["filename"],
+                )
+                msg.attach(part)
+        else:
+            msg = MIMEText(body_html, "html")
+            msg["To"] = ", ".join(to)
+            msg["Subject"] = subject
+
+        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        resp = requests.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+            json={"raw": raw},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 # ── Column index helpers ───────────────────────────────────────────────────────
 
 def col_letter(df: pd.DataFrame, col_name: str) -> str:

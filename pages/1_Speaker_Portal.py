@@ -8,7 +8,7 @@ import streamlit as st
 import pandas as pd
 import requests as _requests
 from utils.styles import inject_css
-from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code, send_gmail
+from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code, send_gmail, send_gmail_with_attachments
 from utils.confirmation import generate_confirmation_id
 
 st.set_page_config(
@@ -921,8 +921,18 @@ with tab_reimburse:
         key="rb_notes",
     )
 
+    rb_receipts = st.file_uploader(
+        "Upload receipts (optional)",
+        type=["pdf", "png", "jpg", "jpeg", "heic", "webp", "gif", "tiff"],
+        accept_multiple_files=True,
+        key="rb_receipts",
+        help="Accepted formats: PDF, PNG, JPG, HEIC, WEBP. Max 10 MB per file.",
+    )
+    if rb_receipts:
+        st.caption(f"{len(rb_receipts)} file(s) ready to attach — they will be emailed with your submission.")
+
     st.info(
-        "After submitting, email your receipts to **aba.micah@snowflake.com** "
+        "You can upload receipts above **or** email them separately to **aba.micah@snowflake.com** "
         "with subject: **Receipts — [Your Confirmation ID]**. "
         "Reimbursements are processed within **10 business days** of receipt approval.",
         icon="🧾",
@@ -974,7 +984,7 @@ with tab_reimburse:
             pay_method, paypal_val,
             bank_name_val, bank_account_val, bank_routing_val,
             rb_notes or "",
-            "Pending — awaiting email",
+            "Uploaded" if (st.session_state.get("rb_receipts") or []) else "Pending — awaiting email",
             "Pending Review",
         ]
 
@@ -989,7 +999,21 @@ with tab_reimburse:
                 else f"Bank transfer — {bank_name_val} / {bank_account_val} / {bank_routing_val}"
             )
 
-            send_gmail(
+            # Build attachment list from uploaded files
+            import mimetypes as _mimetypes
+            attachments = []
+            uploaded_files = st.session_state.get("rb_receipts") or []
+            for f in uploaded_files:
+                mime_type = f.type or _mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                attachments.append({"filename": f.name, "data": f.read(), "mime_type": mime_type})
+
+            receipt_note = (
+                f"{len(attachments)} receipt(s) attached."
+                if attachments
+                else f"No receipts uploaded — speaker may email with subject: Receipts — {reimb_id}"
+            )
+
+            send_gmail_with_attachments(
                 ["aba.micah@snowflake.com"],
                 f"Reimbursement Request — {rb_name.strip()} — {rb_event} ({rb_city})",
                 f"""<div style="font-family:Inter,Arial,sans-serif;max-width:640px;">
@@ -1000,6 +1024,7 @@ with tab_reimburse:
                 <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event</td><td style="padding:8px;border:1px solid #E2E8F0;">{rb_event} — {rb_city} ({rb_date})</td></tr>
                 <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Total (USD)</td><td style="padding:8px;border:1px solid #E2E8F0;font-weight:700;">{total_str}</td></tr>
                 <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Payment</td><td style="padding:8px;border:1px solid #E2E8F0;">{payment_detail}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Receipts</td><td style="padding:8px;border:1px solid #E2E8F0;">{receipt_note}</td></tr>
                 </table>
                 <h4 style="color:#0E2346;margin-top:16px;">Expense items</h4>
                 <table style="border-collapse:collapse;width:100%;margin-bottom:12px;">
@@ -1007,10 +1032,10 @@ with tab_reimburse:
                 </table>
                 {f'<p><strong>Notes:</strong> {rb_notes}</p>' if rb_notes else ''}
                 <p style="color:#718096;font-size:0.85rem;margin-top:16px;">
-                    Receipts expected via email with subject: <em>Receipts — {reimb_id}</em><br>
                     This is an automated notification from the Community Voices platform.
                 </p>
                 </div>""",
+                attachments=attachments or None,
             )
             st.session_state["sp_reimb_done"] = True
             st.session_state["sp_reimb_conf_id"] = reimb_id
