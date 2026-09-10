@@ -607,8 +607,13 @@ with tab_travel:
     if not required_ok:
         st.caption("Complete all required fields (*) to submit.")
 
-    if st.button("Submit Travel Request", type="primary", use_container_width=True,
-                 disabled=not required_ok, key="tv_submit"):
+    tv_submit_clicked = st.button("Submit Travel Request", type="primary",
+                                   use_container_width=True, key="tv_submit")
+
+    if tv_submit_clicked and not required_ok:
+        st.error("Please click into another field to confirm your last entry, then complete all required fields (*).", icon="⚠️")
+
+    if tv_submit_clicked and required_ok:
         import uuid
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         uber_code = claim_uber_code(tv_email.strip(), "Travel")
@@ -717,8 +722,13 @@ with tab_uber:
     if not ub_required:
         st.caption("Complete all required fields (*) to submit.")
 
-    if st.button("Submit Uber Request", type="primary", use_container_width=True,
-                 disabled=not ub_required, key="ub_submit"):
+    ub_submit_clicked = st.button("Submit Uber Request", type="primary",
+                                   use_container_width=True, key="ub_submit")
+
+    if ub_submit_clicked and not ub_required:
+        st.error("Please click into another field to confirm your last entry, then complete all required fields (*).", icon="⚠️")
+
+    if ub_submit_clicked and ub_required:
         import uuid
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         uber_code = claim_uber_code(ub_email.strip(), "Uber")
@@ -955,8 +965,24 @@ with tab_reimburse:
     elif not pay_ok:
         st.caption("Complete your payment details in Section 3 to submit.")
 
-    if st.button("Submit Reimbursement Request", type="primary", use_container_width=True,
-                 disabled=not required_reimb, key="rb_submit"):
+    submit_clicked = st.button("Submit Reimbursement Request", type="primary",
+                                use_container_width=True, key="rb_submit")
+
+    if submit_clicked and not required_reimb:
+        missing = []
+        if not all([rb_name, rb_email, rb_event, rb_city, rb_date]):
+            missing.append("all required fields in Section 1")
+        if not has_expenses:
+            missing.append("at least one expense with an amount greater than 0")
+        if not pay_ok:
+            missing.append("your payment details in Section 3")
+        st.error(
+            "Please click into another field to confirm your last entry, then fix: "
+            + "; ".join(missing) + ".",
+            icon="⚠️",
+        )
+
+    if submit_clicked and required_reimb:
 
         reimb_id = "REIMB-2026-" + _uuid.uuid4().hex[:8].upper()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
