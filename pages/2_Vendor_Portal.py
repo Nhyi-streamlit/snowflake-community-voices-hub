@@ -51,51 +51,31 @@ with tab_single:
             st.session_state.pop("vnd_submitted",None); st.session_state.pop("vnd_eid",None); st.rerun()
         st.stop()
 
-    # Section 1
-    st.markdown('<div class="step-label">Section 1 of 4</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">About You (Organizer)</div>', unsafe_allow_html=True)
+    # About You
+    st.markdown('<div class="section-title">About You</div>', unsafe_allow_html=True)
     c1,c2=st.columns(2)
     with c1: org_name=st.text_input("Your full name *", key="vnd_name")
     with c2: org_email=st.text_input("Email address *", key="vnd_email")
-    c3,c4=st.columns(2)
-    with c3: org_org=st.text_input("Organization *", key="vnd_org")
-    with c4: org_role=st.text_input("Your role", key="vnd_role")
-    org_web=st.text_input("Organization website", key="vnd_web")
+    org_org=st.text_input("Organization *", key="vnd_org")
     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-    # Section 2
-    st.markdown('<div class="step-label">Section 2 of 4</div>', unsafe_allow_html=True)
+    # Event Details
     st.markdown('<div class="section-title">Event Details</div>', unsafe_allow_html=True)
     ev_name=st.text_input("Event name *", key="vnd_evname")
     ev_web=st.text_input("Event website *", key="vnd_evweb")
     c5,c6=st.columns(2)
     with c5: ev_start=st.date_input("Start date *", min_value=date.today(), key="vnd_start")
-    with c6: ev_end=st.date_input("End date", min_value=date.today(), key="vnd_end")
+    with c6: ev_fmt=st.selectbox("Format *",["Select...","In-person conference","Hybrid conference","Virtual conference","Community meetup (in-person)","Community meetup (virtual)","University / academic","Other"], key="vnd_fmt")
     c7,c8=st.columns(2)
     with c7: ev_city=st.text_input("City *", key="vnd_city")
     with c8: ev_country=st.text_input("Country *", key="vnd_country")
-    ev_fmt=st.selectbox("Format *",["Select...","In-person conference","Hybrid conference","Virtual conference","Community meetup (in-person)","Community meetup (virtual)","University / academic","Other"], key="vnd_fmt")
-    ev_audience=st.select_slider("Expected attendance",["< 50","50–200","200–500","500–1,000","1,000–5,000","5,000+"],value="200–500",key="vnd_audience")
-    ev_align=st.multiselect("Primary audience",["Data Engineers","Analytics Engineers","Data Scientists / ML","Software Developers","Data Analysts","Data Leaders","AI / GenAI Builders","Open Source Community","Academic / Student"], key="vnd_align")
     ev_desc=st.text_area("Describe your event *", height=100, key="vnd_desc")
     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-    # Section 3
-    st.markdown('<div class="step-label">Section 3 of 4</div>', unsafe_allow_html=True)
+    # Speaker Request
     st.markdown('<div class="section-title">Speaker Request</div>', unsafe_allow_html=True)
-    spk_topic=st.text_area("Topic you'd like a speaker on *", height=90, key="vnd_topic")
-    topic_tags=st.multiselect("Topic tags",["Data Engineering","Snowpark / Python","Cortex AI / LLMs","Streamlit","Data Sharing","Cost Optimization","ML / MLOps","Iceberg","Dynamic Tables","Other"], key="vnd_tags")
-    c9,c10=st.columns(2)
-    with c9: spk_fmt=st.selectbox("Session format",["Select...","Conference talk (30–45 min)","Lightning talk","Workshop","Panel","Keynote"], key="vnd_spkfmt")
-    with c10: spk_level=st.selectbox("Technical level",["No preference","Beginner","Intermediate","Advanced"], key="vnd_level")
-    cfp_link=st.text_input("CFP link (if applicable)", key="vnd_cfp")
-    cfp_deadline=st.date_input("CFP deadline", min_value=date.today(), value=None, key="vnd_deadline")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    # Section 4
-    st.markdown('<div class="step-label">Section 4 of 4</div>', unsafe_allow_html=True)
-    how_heard=st.selectbox("How did you hear about Community Voices?",["Select...","Snowflake website","Social media","Word of mouth","Previous Snowflake speaker","Snowflake team member","Other"], key="vnd_heard")
-    add_notes=st.text_area("Additional notes", height=80, key="vnd_notes")
+    spk_topic=st.text_area("What topic would you like a speaker on? *", height=90, key="vnd_topic")
+    cfp_link=st.text_input("CFP / speaker submission link (if applicable)", key="vnd_cfp")
     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
     ok=all([org_name,org_email,org_org,ev_name,ev_web,ev_city,ev_country,
@@ -105,13 +85,11 @@ with tab_single:
         now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         eid=generate_confirmation_id().replace("CV-","EV-")
         rid=generate_confirmation_id().replace("CV-","SR-")
-        ev_row=[eid,now,"Pending",org_name,org_email,org_org,org_role or "",org_web or "",
-                ev_name,ev_web,str(ev_start),str(ev_end),ev_city,ev_country,ev_fmt,ev_audience,
-                ", ".join(ev_align),ev_desc,how_heard if how_heard!="Select..." else "",
-                add_notes or "",""]
-        req_row=[rid,now,"Pending",eid,ev_name,spk_topic,", ".join(topic_tags),
-                 spk_fmt if spk_fmt!="Select..." else "",spk_level,cfp_link or "",
-                 str(cfp_deadline) if cfp_deadline else "","",""]
+        ev_row=[eid,now,"Pending",org_name,org_email,org_org,"","",
+                ev_name,ev_web,str(ev_start),"",ev_city,ev_country,ev_fmt,"",
+                "",ev_desc,"","",""]
+        req_row=[rid,now,"Pending",eid,ev_name,spk_topic,"",
+                 "","",cfp_link or "","","",""]
         ok1=append_row("Events",ev_row); ok2=append_row("Speaker_Requests",req_row)
         if ok1 and ok2:
             st.session_state["vnd_submitted"]=True; st.session_state["vnd_eid"]=eid; st.rerun()
