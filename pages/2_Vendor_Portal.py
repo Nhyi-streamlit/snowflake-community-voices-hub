@@ -62,25 +62,24 @@ with tab_single:
     # Event Details
     st.markdown('<div class="section-title">Event Details</div>', unsafe_allow_html=True)
     ev_name=st.text_input("Event name *", key="vnd_evname")
-    ev_web=st.text_input("Event website *", key="vnd_evweb")
     c5,c6=st.columns(2)
     with c5: ev_start=st.date_input("Start date *", min_value=date.today(), key="vnd_start")
-    with c6: ev_fmt=st.selectbox("Format *",["Select...","In-person conference","Hybrid conference","Virtual conference","Community meetup (in-person)","Community meetup (virtual)","University / academic","Other"], key="vnd_fmt")
+    with c6: ev_city=st.text_input("City *", key="vnd_city")
+    ev_web=st.text_input("Event website", key="vnd_evweb", placeholder="Optional")
     c7,c8=st.columns(2)
-    with c7: ev_city=st.text_input("City *", key="vnd_city")
-    with c8: ev_country=st.text_input("Country *", key="vnd_country")
-    ev_desc=st.text_area("Describe your event *", height=100, key="vnd_desc")
+    with c7: ev_country=st.text_input("Country", key="vnd_country", placeholder="Optional")
+    with c8: ev_fmt=st.selectbox("Format",["","In-person conference","Hybrid conference","Virtual conference","Community meetup (in-person)","Community meetup (virtual)","University / academic","Other"], key="vnd_fmt")
+    ev_desc=st.text_area("Describe your event", height=80, key="vnd_desc", placeholder="Optional — brief description of your event")
     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
     # Speaker Request
     st.markdown('<div class="section-title">Speaker Request</div>', unsafe_allow_html=True)
     spk_topic=st.text_area("What topic would you like a speaker on? *", height=90, key="vnd_topic")
-    cfp_link=st.text_input("CFP / speaker submission link (if applicable)", key="vnd_cfp")
+    cfp_link=st.text_input("CFP / speaker submission link", key="vnd_cfp", placeholder="Optional")
     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
-    ok=all([org_name,org_email,org_org,ev_name,ev_web,ev_city,ev_country,
-            ev_fmt!="Select...",ev_desc,spk_topic])
-    if not ok: st.caption("Complete all required fields to submit.")
+    ok=all([org_name,org_email,org_org,ev_name,ev_city,spk_topic])
+    if not ok: st.caption("Complete all required fields (*) to submit.")
     if st.button("Register Event & Request Speaker", type="primary", use_container_width=True, disabled=not ok, key="vnd_submit"):
         now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         eid=generate_confirmation_id().replace("CV-","EV-")
