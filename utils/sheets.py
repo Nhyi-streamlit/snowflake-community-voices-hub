@@ -275,6 +275,147 @@ def send_gmail_with_attachments(
         return False
 
 
+# ── Google Drive upload ────────────────────────────────────────────────────────
+
+_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files"
+_DRIVE_UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
+
+_receipts_folder_cache: dict = {}
+
+
+def _find_drive_folder(name: str, parent_id: str | None = None) -> str | None:
+    """Search for a Drive folder by name. Returns folder ID or None."""
+    token = get_access_token()
+    q = f"name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    if parent_id:
+        q += f" and '{parent_id}' in parents"
+    resp = requests.get(
+        _DRIVE_FILES_URL,
+        params={"q": q, "fields": "files(id)", "pageSize": 1},
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        return None
+    files = resp.json().get("files", [])
+    return files[0]["id"] if files else None
+
+
+def _create_drive_folder(name: str, parent_id: str | None = None) -> str | None:
+    """Create a Drive folder. Returns folder ID or None."""
+    token = get_access_token()
+    metadata = {
+        "name": name,
+        "mimeType": "application/vnd.google-apps.folder",
+    }
+    if parent_id:
+        metadata["parents"] = [parent_id]
+    resp = requests.post(
+        _DRIVE_FILES_URL,
+        json=metadata,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=15,
+    )
+    if resp.status_code in (200, 201):
+        return resp.json().get("id")
+    return None
+
+
+def get_or_create_receipts_folder(subfolder_name: str) -> str | None:
+    """Get or create 'Community Voices Receipts/{subfolder_name}' in Drive.
+
+    Returns the subfolder ID, or None on failure.
+    """
+    # Top-level folder (cached for the session)
+    top_id = _receipts_folder_cache.get("top")
+    if not top_id:
+        top_id = _find_drive_folder("Community Voices Receipts")
+        if not top_id:
+            top_id = _create_drive_folder("Community Voices Receipts")
+        if not top_id:
+            return None
+        _receipts_folder_cache["top"] = top_id
+
+    # Per-reimbursement subfolder
+    sub_id = _find_drive_folder(subfolder_name, parent_id=top_id)
+    if not sub_id:
+        sub_id = _create_drive_folder(subfolder_name, parent_id=top_id)
+    return sub_id
+
+
+def upload_file_to_drive(
+    file_data: bytes, filename: str, mime_type: str, folder_id: str
+) -> str | None:
+    """Upload a file to a Drive folder and make it viewable via link.
+
+    Returns the shareable webViewLink, or None on failure.
+    """
+    import json as _json
+
+    token = get_access_token()
+    metadata = {"name": filename, "parents": [folder_id]}
+    # Multipart upload: metadata + file content
+    boundary = "----ReceiptUploadBoundary"
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Type: application/json; charset=UTF-8\r\n\r\n"
+        f"{_json.dumps(metadata)}\r\n"
+        f"--{boundary}\r\n"
+        f"Content-Type: {mime_type}\r\n"
+        f"Content-Transfer-Encoding: base64\r\n\r\n"
+    ).encode()
+
+    import base64 as _b64
+    body += _b64.b64encode(file_data) + f"\r\n--{boundary}--\r\n".encode()
+
+    resp = requests.post(
+        _DRIVE_UPLOAD_URL,
+        params={"uploadType": "multipart", "fields": "id,webViewLink"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": f"multipart/related; boundary={boundary}",
+        },
+        data=body,
+        timeout=60,
+    )
+    if resp.status_code not in (200, 201):
+        return None
+    file_id = resp.json().get("id")
+    web_link = resp.json().get("webViewLink")
+
+    # Make file viewable to anyone with the link
+    if file_id:
+        requests.post(
+            f"{_DRIVE_FILES_URL}/{file_id}/permissions",
+            json={"role": "reader", "type": "anyone"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+
+    return web_link
+
+
+def upload_receipts_to_drive(
+    reimb_id: str, files: list[dict]
+) -> list[str]:
+    """Upload receipt files to Drive under a reimbursement subfolder.
+
+    `files` is a list of dicts: {"filename": str, "data": bytes, "mime_type": str}
+    Returns a list of shareable links (may be shorter than input if uploads fail).
+    """
+    if not files:
+        return []
+    folder_id = get_or_create_receipts_folder(reimb_id)
+    if not folder_id:
+        return []
+    links = []
+    for f in files:
+        link = upload_file_to_drive(f["data"], f["filename"], f["mime_type"], folder_id)
+        if link:
+            links.append(link)
+    return links
+
+
 # ── Column index helpers ───────────────────────────────────────────────────────
 
 def col_letter(df: pd.DataFrame, col_name: str) -> str:

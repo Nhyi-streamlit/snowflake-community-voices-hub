@@ -8,8 +8,14 @@ import streamlit as st
 import pandas as pd
 import requests as _requests
 from utils.styles import inject_css
-from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code, send_gmail, send_gmail_with_attachments
+from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code, send_gmail, send_gmail_with_attachments, upload_receipts_to_drive
 from utils.confirmation import generate_confirmation_id
+from utils.identity import current_identity
+
+speaker_identity = current_identity(st.user)
+if speaker_identity is None:
+    st.error("Sign in with a verified Google account to use the speaker portal.")
+    st.stop()
 
 st.set_page_config(
     page_title="Speaker Portal — Community Voices",
@@ -89,7 +95,13 @@ with tab_browse:
     @st.cache_data(ttl=300)
     def load_platform_events():
         try:
-            return read_tab("Events"), read_tab("Speaker_Requests")
+            events = read_tab("Events")
+            if not events.empty and "status" in events:
+                safe_cols = [col for col in ["event_id", "event_name", "event_city", "event_country", "event_start", "event_end", "event_format"] if col in events]
+                events = events.loc[events["status"].eq("Approved"), safe_cols].copy()
+            else:
+                events = pd.DataFrame()
+            return events, pd.DataFrame()
         except Exception:
             return pd.DataFrame(), pd.DataFrame()
 
@@ -188,7 +200,8 @@ with tab_browse:
                     with st.form(key=f"sp_form_{sheet_row}"):
                         c_n, c_e = st.columns(2)
                         with c_n: n = st.text_input("Your name", key=f"sp_n_{sheet_row}")
-                        with c_e: e = st.text_input("Your email", key=f"sp_e_{sheet_row}")
+                        with c_e: st.text_input("Verified email", value=speaker_identity.email, disabled=True, key=f"sp_e_{sheet_row}")
+                        e = speaker_identity.email
                         sub = st.form_submit_button("Submit interest", type="primary", use_container_width=True)
                     if sub and n and e:
                         write_signup_to_slots(sheet_row, n, e)
@@ -448,7 +461,8 @@ with tab_travel:
     st.markdown('<div class="section-title">Personal details</div>', unsafe_allow_html=True)
     pd1, pd2 = st.columns(2)
     with pd1:
-        tv_email = st.text_input("Your email *", key="tv_email")
+        tv_email = st.text_input("Verified email", value=speaker_identity.email, disabled=True, key="tv_email")
+        tv_email = speaker_identity.email
     with pd2:
         passport_name = st.text_input(
             "Full name as on passport *",
@@ -689,7 +703,8 @@ with tab_uber:
 
     st.markdown("**Your details**")
     ub1, ub2 = st.columns(2)
-    with ub1: ub_email = st.text_input("Your email *", key="ub_email")
+    with ub1: st.text_input("Verified email", value=speaker_identity.email, disabled=True, key="ub_email")
+    ub_email = speaker_identity.email
     with ub2: ub_name  = st.text_input("Your full name *", key="ub_name")
 
     ub3, ub4 = st.columns(2)
@@ -790,7 +805,8 @@ with tab_reimburse:
         with rb1:
             rf_name  = st.text_input("Full name *", key="rf_name")
         with rb2:
-            rf_email = st.text_input("Email *", key="rf_email")
+            st.text_input("Verified email", value=speaker_identity.email, disabled=True, key="rf_email")
+            rf_email = speaker_identity.email
         rb3, rb4, rb5 = st.columns(3)
         with rb3:
             rf_event = st.text_input("Event name *", placeholder="Data Summit NYC", key="rf_event")
@@ -937,6 +953,31 @@ with tab_reimburse:
                 bank_account_val = st.session_state.get("rf_account", "")
                 bank_routing_val = st.session_state.get("rf_routing", "")
 
+            # Prepare receipt file dicts for Drive upload and email
+            import mimetypes as _mimetypes
+            attachments = []
+            for f in (rf_receipts or []):
+                mime_type = f.type or _mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+                attachments.append({"filename": f.name, "data": f.read(), "mime_type": mime_type})
+
+            # Upload receipts to Google Drive
+            drive_links = []
+            if attachments:
+                try:
+                    drive_links = upload_receipts_to_drive(reimb_id, attachments)
+                except Exception:
+                    pass  # fall back to email-only
+
+            if drive_links:
+                receipt_links_str = "\n".join(drive_links)
+                receipt_status = f"Uploaded — {len(drive_links)} file(s) in Drive"
+            elif attachments:
+                receipt_links_str = "Email only"
+                receipt_status = "Uploaded — email only"
+            else:
+                receipt_links_str = ""
+                receipt_status = "Pending — awaiting email"
+
             sheet_row = [
                 reimb_id, now,
                 rf_name.strip(), rf_email.strip(),
@@ -946,8 +987,9 @@ with tab_reimburse:
                 rf_pay_method, paypal_val,
                 bank_name_val, bank_account_val, bank_routing_val,
                 rf_notes or "",
-                "Uploaded" if (rf_receipts or []) else "Pending — awaiting email",
+                receipt_status,
                 "Pending Review",
+                receipt_links_str,
             ]
 
             if append_row("Reimbursements", sheet_row):
@@ -960,14 +1002,13 @@ with tab_reimburse:
                     else f"Bank transfer — {bank_name_val} / {bank_account_val} / {bank_routing_val}"
                 )
 
-                import mimetypes as _mimetypes
-                attachments = []
-                for f in (rf_receipts or []):
-                    mime_type = f.type or _mimetypes.guess_type(f.name)[0] or "application/octet-stream"
-                    attachments.append({"filename": f.name, "data": f.read(), "mime_type": mime_type})
+                drive_links_html = ""
+                if drive_links:
+                    links_list = "".join(f'<li><a href="{lnk}">{lnk}</a></li>' for lnk in drive_links)
+                    drive_links_html = f"<h4 style='color:#0E2346;margin-top:16px;'>Receipt files (Google Drive)</h4><ul>{links_list}</ul>"
 
                 receipt_note = (
-                    f"{len(attachments)} receipt(s) attached."
+                    f"{len(attachments)} receipt(s) attached.{' Also saved to Drive.' if drive_links else ''}"
                     if attachments
                     else f"No receipts uploaded — speaker may email with subject: Receipts — {reimb_id}"
                 )
@@ -989,6 +1030,7 @@ with tab_reimburse:
                     <table style="border-collapse:collapse;width:100%;margin-bottom:12px;">
                     {expense_rows_html}
                     </table>
+                    {drive_links_html}
                     {f'<p><strong>Notes:</strong> {rf_notes}</p>' if rf_notes else ''}
                     <p style="color:#718096;font-size:0.85rem;margin-top:16px;">
                         This is an automated notification from the Community Voices platform.
