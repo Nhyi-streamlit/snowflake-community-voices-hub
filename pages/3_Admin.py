@@ -29,38 +29,10 @@ Q3_TARGETS = {
 
 STATUS_OPTIONS = ["Pending", "Approved", "Waitlisted", "Not a Fit"]
 
-# ── Password gate ─────────────────────────────────────────────────────────────
-if not st.session_state.get("admin_auth"):
-    st.markdown("""
-    <div class="page-hero" style="max-width:480px; margin:60px auto 0;">
-      <div class="eyebrow">Admin Portal</div>
-      <h1>Sign in</h1>
-      <p>This page is restricted to the Community Voices program team.</p>
-    </div>
-    """, unsafe_allow_html=True)
+from utils.identity import require_admin
+require_admin()
 
-    with st.form("admin_login", clear_on_submit=False):
-        pw = st.text_input("Password", type="password")
-        login = st.form_submit_button("Sign In", type="primary", use_container_width=True)
-
-    if login:
-        expected = ""
-        try:
-            expected = st.secrets.get("ADMIN_PASSWORD", "community2026")
-        except Exception:
-            expected = os.environ.get("ADMIN_PASSWORD", "community2026")
-
-        if pw == expected:
-            st.session_state["admin_auth"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    st.stop()
-
-# ── Authenticated ─────────────────────────────────────────────────────────────
-if st.button("Sign out", key="logout"):
-    st.session_state["admin_auth"] = False
-    st.rerun()
+# Access is checked again on the page, not just in navigation.
 
 st.markdown("""
 <div class="page-hero">

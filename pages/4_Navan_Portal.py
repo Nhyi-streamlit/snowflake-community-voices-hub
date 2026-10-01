@@ -15,30 +15,10 @@ st.set_page_config(
 )
 inject_css()
 
-# ── Password gate (separate from admin) ───────────────────────────────────────
-if not st.session_state.get("navan_auth"):
-    st.markdown("""
-    <div class="page-hero" style="max-width:480px;margin:60px auto 0;">
-      <div class="eyebrow">Travel Vendor Portal</div>
-      <h1>Navan — Sign in</h1>
-      <p>Restricted to the Snowflake travel booking team.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    with st.form("navan_login"):
-        pw = st.text_input("Password", type="password")
-        login = st.form_submit_button("Sign In", type="primary", use_container_width=True)
-    if login:
-        expected = ""
-        try: expected = st.secrets.get("NAVAN_PASSWORD", "navan2026")
-        except Exception: expected = os.environ.get("NAVAN_PASSWORD", "navan2026")
-        if pw == expected:
-            st.session_state["navan_auth"] = True; st.rerun()
-        else:
-            st.error("Incorrect password.")
-    st.stop()
+from utils.identity import require_admin
+require_admin()
 
-if st.button("Sign out", key="navan_logout"):
-    st.session_state["navan_auth"] = False; st.rerun()
+# Navan access remains staff-only until individual vendor identities are provisioned.
 
 st.markdown("""
 <div class="page-hero" style="background:linear-gradient(135deg,#1A202C 0%,#2D3748 100%);">

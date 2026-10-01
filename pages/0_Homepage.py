@@ -14,6 +14,11 @@ st.set_page_config(
 )
 inject_css()
 
+from utils.identity import current_identity, is_admin
+_home_identity = current_identity(st.user) if getattr(st.user, "is_logged_in", False) else None
+if _home_identity is None:
+    st.info("Speakers and event organizers: sign in with Google (sidebar) to open your event workspace.")
+
 # ── Hero ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="page-hero">
@@ -39,7 +44,9 @@ with col_spk:
       <p style="color:#2D4A6B;font-size:0.88rem;">Browse events, book travel, access resources, and get Uber gift cards.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/1_Speaker_Portal.py", label="Speaker Portal →", icon="🎤")
+    st.page_link("pages/1_Speaker_Portal.py", label="Speaker Portal", icon=":material/mic:")
+    if _home_identity:
+        st.page_link("pages/5_Workspace.py", label="My event workspace", icon=":material/folder:")
 
 with col_vnd:
     st.markdown("""
@@ -50,7 +57,10 @@ with col_vnd:
       <p style="color:#553C9A;font-size:0.88rem;">Register events, request speakers, bulk upload, track submissions.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/2_Vendor_Portal.py", label="Vendor Portal →", icon="🏟️")
+    if _home_identity:
+        st.page_link("pages/5_Workspace.py", label="Propose an event or open your workspace", icon=":material/storefront:")
+    else:
+        st.caption("Sign in to propose an event or open your event workspace.")
 
 with col_admin:
     st.markdown("""
@@ -61,7 +71,8 @@ with col_admin:
       <p style="color:#2D3748;font-size:0.88rem;">Manage applications, Q3 goals, speaker matching, comms, and bulk operations.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/3_Admin.py", label="Admin Portal →", icon="🔐")
+    if is_admin(_home_identity):
+        st.page_link("pages/3_Admin.py", label="Admin Portal", icon=":material/admin_panel_settings:")
 
 with col_navan:
     st.markdown("""
@@ -72,7 +83,8 @@ with col_navan:
       <p style="color:#4A5568;font-size:0.88rem;">Travel booking queue, speaker itineraries, Uber requests, batch export.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/4_Navan_Portal.py", label="Navan Portal →", icon="✈️")
+    if is_admin(_home_identity):
+        st.page_link("pages/4_Navan_Portal.py", label="Navan Portal", icon=":material/flight:")
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
@@ -97,7 +109,11 @@ st.caption("Events that have already taken place under the Community Voices prog
 @st.cache_data(ttl=600)
 def load_home_past_events():
     try:
-        return read_tab("Events")
+        events = read_tab("Events")
+        if events.empty or "status" not in events:
+            return pd.DataFrame()
+        public_cols = [col for col in ["event_name", "event_city", "event_country", "event_start", "event_format"] if col in events]
+        return events.loc[events["status"].eq("Approved"), public_cols].copy()
     except Exception:
         return pd.DataFrame()
 
@@ -123,7 +139,8 @@ else:
         past_home = df_home_all[df_home_all["_parsed"].apply(lambda x: x is not None and x < today_h)].copy()
         past_home = past_home.sort_values("_parsed", ascending=False).reset_index(drop=True)
     else:
-        past_home = df_home_all.copy()
+        st.info("Past event details are available only for approved public events.")
+        past_home = pd.DataFrame()
 
     if past_home.empty:
         st.info("No past events on record yet.")

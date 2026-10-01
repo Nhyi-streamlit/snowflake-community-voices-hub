@@ -1,0 +1,31 @@
+-- 000_service_identity.sql.template — NOT run automatically. Review, fill in, and run as an admin
+-- role once the production database/schema is chosen. The app connects only as this service user;
+-- external speakers and vendors never receive Snowflake credentials.
+--
+--   <DB>.<SCHEMA>  production workflow schema   <WH>  small warehouse   <PUBLIC_KEY>  RSA public key
+
+CREATE ROLE IF NOT EXISTS CV_WORKFLOW_APP;
+CREATE USER IF NOT EXISTS CV_WORKFLOW_SVC
+  TYPE = SERVICE
+  DEFAULT_ROLE = CV_WORKFLOW_APP
+  DEFAULT_WAREHOUSE = <WH>
+  RSA_PUBLIC_KEY = '<PUBLIC_KEY>'
+  COMMENT = 'Community Voices app service identity';
+GRANT ROLE CV_WORKFLOW_APP TO USER CV_WORKFLOW_SVC;
+
+GRANT USAGE ON WAREHOUSE <WH> TO ROLE CV_WORKFLOW_APP;
+GRANT USAGE ON DATABASE <DB> TO ROLE CV_WORKFLOW_APP;
+GRANT USAGE ON SCHEMA <DB>.<SCHEMA> TO ROLE CV_WORKFLOW_APP;
+
+-- Least privilege: no DELETE, no DDL. Versions and audit are append-only in practice.
+GRANT SELECT, INSERT, UPDATE ON TABLE <DB>.<SCHEMA>.WF_EVENTS        TO ROLE CV_WORKFLOW_APP;
+GRANT SELECT, INSERT, UPDATE ON TABLE <DB>.<SCHEMA>.WF_MEMBERS       TO ROLE CV_WORKFLOW_APP;
+GRANT SELECT, INSERT, UPDATE ON TABLE <DB>.<SCHEMA>.WF_ITEMS         TO ROLE CV_WORKFLOW_APP;
+GRANT SELECT, INSERT, UPDATE ON TABLE <DB>.<SCHEMA>.WF_OUTBOX        TO ROLE CV_WORKFLOW_APP;
+GRANT SELECT, INSERT         ON TABLE <DB>.<SCHEMA>.WF_ITEM_VERSIONS TO ROLE CV_WORKFLOW_APP;
+GRANT SELECT, INSERT         ON TABLE <DB>.<SCHEMA>.WF_AUDIT         TO ROLE CV_WORKFLOW_APP;
+GRANT READ, WRITE ON STAGE <DB>.<SCHEMA>.WF_FILES TO ROLE CV_WORKFLOW_APP;
+
+-- Restrict where the service user can sign in from (Streamlit Community Cloud egress or your host).
+-- CREATE NETWORK POLICY CV_WORKFLOW_NP ALLOWED_IP_LIST = ('<egress-ip>/32');
+-- ALTER USER CV_WORKFLOW_SVC SET NETWORK_POLICY = CV_WORKFLOW_NP;

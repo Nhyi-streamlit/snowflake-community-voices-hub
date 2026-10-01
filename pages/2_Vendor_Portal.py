@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import requests as _requests
 from utils.styles import inject_css
+from utils.sections import SectionDone, section
 from utils.sheets import append_row, read_tab, get_access_token
 from utils.confirmation import generate_confirmation_id
 
@@ -17,6 +18,12 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 inject_css()
+
+from utils.identity import current_identity
+vendor_identity = current_identity(st.user)
+if vendor_identity is None:
+    st.error("Sign in with a verified Google account to use the vendor portal.")
+    st.stop()
 
 st.markdown("""
 <div class="page-hero" style="background:linear-gradient(135deg,#44337A 0%,#6B46C1 100%);">
@@ -30,6 +37,9 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+st.info("Event organizers now propose events and track speaker requests, deadlines, and materials in My event workspace.")
+st.page_link("pages/5_Workspace.py", label="Open My event workspace", icon=":material/folder:")
+
 tab_single, tab_bulk, tab_mine = st.tabs([
     "Register Single Event",
     "Bulk Upload (CSV / Excel / Google Sheets)",
@@ -39,7 +49,9 @@ tab_single, tab_bulk, tab_mine = st.tabs([
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1: SINGLE EVENT FORM
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_single:
+with section(tab_single):
+    st.warning("New vendor submissions are paused until the event workflow store and routed notifications are configured. Existing records remain intact.")
+    raise SectionDone
     if st.session_state.get("vnd_submitted"):
         eid=st.session_state.get("vnd_eid","")
         st.markdown(f"""<div class="success-box"><h2>Event registered!</h2>
@@ -49,13 +61,14 @@ with tab_single:
         st.info("Save this ID — reference it in any follow-up emails.", icon="📋")
         if st.button("Register another event", key="vnd_another"):
             st.session_state.pop("vnd_submitted",None); st.session_state.pop("vnd_eid",None); st.rerun()
-        st.stop()
+        raise SectionDone
 
     # About You
     st.markdown('<div class="section-title">About You</div>', unsafe_allow_html=True)
     c1,c2=st.columns(2)
     with c1: org_name=st.text_input("Your full name *", key="vnd_name")
-    with c2: org_email=st.text_input("Email address *", key="vnd_email")
+    with c2: st.text_input("Verified email address", value=vendor_identity.email, disabled=True, key="vnd_email")
+    org_email=vendor_identity.email
     org_org=st.text_input("Organization *", key="vnd_org")
     st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
@@ -98,13 +111,15 @@ with tab_single:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2: BULK UPLOAD
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_bulk:
+with section(tab_bulk):
+    st.warning("Bulk intake is paused until the workflow backend is configured.")
+    raise SectionDone
     if st.session_state.get("vnd_bulk_done"):
         n=st.session_state.get("vnd_bulk_n",0)
         st.markdown(f'<div class="success-box"><h2>{n} event(s) submitted!</h2><p>The team will review within 5 business days.</p></div>', unsafe_allow_html=True)
         if st.button("Upload another batch", key="vnd_bulk_reset"):
             st.session_state.pop("vnd_bulk_done",None); st.session_state.pop("vnd_bulk_n",None); st.rerun()
-        st.stop()
+        raise SectionDone
 
     st.markdown("### Upload multiple events at once")
     TEMPLATE_COLS=["organizer_name","organizer_email","organizer_org","event_name","event_website",
@@ -172,7 +187,7 @@ with tab_bulk:
                     eid=generate_confirmation_id().replace("CV-","EV-")
                     rid=generate_confirmation_id().replace("CV-","SR-")
                     ev_row=[eid,now,"Pending",
-                            row.get("organizer_name",""),row.get("organizer_email",""),
+                            row.get("organizer_name",""),vendor_identity.email,
                             row.get("organizer_org",""),row.get("organizer_role",""),row.get("org_website",""),
                             row.get("event_name",""),row.get("event_website",""),
                             row.get("event_start",row.get("event_date","")),row.get("event_end",""),
@@ -192,11 +207,11 @@ with tab_bulk:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3: MY SUBMISSIONS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_mine:
+with section(tab_mine):
     st.markdown("### Check the status of your submitted events")
-    with st.form("vnd_check_form"):
-        check_email=st.text_input("Your organizer email address")
-        check_sub=st.form_submit_button("Look up my events",type="primary",use_container_width=True)
+    st.info("Legacy submissions are not available in the protected portal until an administrator verifies and assigns them. New event assignments appear in My event workspace.")
+    check_sub=False
+    check_email=vendor_identity.email
 
     if check_sub:
         if not check_email:
@@ -204,11 +219,11 @@ with tab_mine:
         else:
             with st.spinner("Looking up..."):
                 try: df_ev=read_tab("Events")
-                except Exception as ex: st.error(f"Database error: {ex}"); st.stop()
+                except Exception as ex: st.error(f"Database error: {ex}"); raise SectionDone
             if df_ev.empty or "organizer_email" not in df_ev.columns:
                 st.info("No events found.")
             else:
-                mine=df_ev[df_ev["organizer_email"].str.strip().str.lower()==check_email.strip().lower()]
+                mine=df_ev[df_ev["organizer_email"].str.strip().str.lower()==vendor_identity.email]
                 if mine.empty:
                     st.info(f"No events found for **{check_email}**. Double-check the email you registered with.")
                 else:
