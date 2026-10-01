@@ -71,8 +71,8 @@ with col_admin:
       <p style="color:#2D3748;font-size:0.88rem;">Manage applications, Q3 goals, speaker matching, comms, and bulk operations.</p>
     </div>
     """, unsafe_allow_html=True)
-    if is_admin(_home_identity):
-        st.page_link("pages/3_Admin.py", label="Admin Portal", icon=":material/admin_panel_settings:")
+    # The page itself requires the program team password or an admin sign-in.
+    st.page_link("pages/3_Admin.py", label="Admin Portal", icon=":material/admin_panel_settings:")
 
 with col_navan:
     st.markdown("""
@@ -83,8 +83,8 @@ with col_navan:
       <p style="color:#4A5568;font-size:0.88rem;">Travel booking queue, speaker itineraries, Uber requests, batch export.</p>
     </div>
     """, unsafe_allow_html=True)
-    if is_admin(_home_identity):
-        st.page_link("pages/4_Navan_Portal.py", label="Navan Portal", icon=":material/flight:")
+    # The page itself requires the program team password or an admin sign-in.
+    st.page_link("pages/4_Navan_Portal.py", label="Navan Portal", icon=":material/flight:")
 
 st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 

@@ -16,7 +16,7 @@ st.set_page_config(
 inject_css()
 
 from utils.identity import require_admin
-require_admin()
+require_admin("navan")
 
 # Navan access remains staff-only until individual vendor identities are provisioned.
 

@@ -21,6 +21,10 @@ def get_actor() -> Actor | None:
         return OVERRIDE["actor"]
     identity = current_identity(st.user)
     if identity is None:
+        from utils.identity import password_unlocked
+        if password_unlocked("admin"):
+            # Interim shared-password admin: recorded in the audit log as this fixed actor.
+            return Actor("interim-password-admin", "", is_admin=True)
         return None
     return Actor(identity.subject, identity.email, is_admin(identity))
 

@@ -17,8 +17,12 @@ from workflow.ui import md, run_action, show_flash
 
 st.set_page_config(page_title="Workflow admin - Community Voices", layout="wide")
 
+from utils.identity import require_admin
+from workflow.runtime import OVERRIDE
+if "actor" not in OVERRIDE:
+    require_admin()                         # checked here, not only in navigation
 actor = get_actor()
-if actor is None or not actor.is_admin:     # checked here, not only in navigation
+if actor is None or not actor.is_admin:
     st.error("This area is restricted to program administrators.")
     st.stop()
 svc = get_service()
