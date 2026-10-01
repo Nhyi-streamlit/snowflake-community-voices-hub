@@ -383,16 +383,8 @@ def upload_file_to_drive(
     file_id = resp.json().get("id")
     web_link = resp.json().get("webViewLink")
 
-    # Make file viewable to anyone with the link
-    if file_id:
-        requests.post(
-            f"{_DRIVE_FILES_URL}/{file_id}/permissions",
-            json={"role": "reader", "type": "anyone"},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=10,
-        )
-
-    return web_link
+    # Return viewable link so it can be embedded in the spreadsheet
+    return web_link or f"https://drive.google.com/file/d/{file_id}/view"
 
 
 def upload_receipts_to_drive(

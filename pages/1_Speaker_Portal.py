@@ -8,14 +8,14 @@ import streamlit as st
 import pandas as pd
 import requests as _requests
 from utils.styles import inject_css
-from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code, send_gmail, send_gmail_with_attachments, upload_receipts_to_drive
+from utils.sections import SectionDone, section
+from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code
 from utils.confirmation import generate_confirmation_id
 from utils.identity import current_identity
 
+# Public page: resources, upcoming events, and audience feedback need no sign-in.
+# Sections that write personal data are paused; speaker uploads live in My event workspace.
 speaker_identity = current_identity(st.user)
-if speaker_identity is None:
-    st.error("Sign in with a verified Google account to use the speaker portal.")
-    st.stop()
 
 st.set_page_config(
     page_title="Speaker Portal — Community Voices",
@@ -68,7 +68,9 @@ tab_feedback   = tab_map.get("⭐ Talk Feedback")
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: AVAILABLE SPEAKING SLOTS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_browse:
+with section(tab_browse):
+    st.warning("The legacy speaking-slot signup is paused until each signup can be tied to a verified event and owner. Contact the program team to express interest.")
+    raise SectionDone
     st.markdown("### Available speaking slots")
     st.markdown("Events confirmed and actively seeking Snowflake community speakers. Sign up directly below.")
 
@@ -234,14 +236,18 @@ with tab_browse:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: UPCOMING EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_upcoming:
+with section(tab_upcoming):
     st.markdown("### Upcoming events")
     st.markdown("All events in the Community Voices programme scheduled from today onwards.")
 
     @st.cache_data(ttl=300)
     def load_all_events():
         try:
-            return read_tab("Events")
+            events = read_tab("Events")
+            if events.empty or "status" not in events:
+                return pd.DataFrame()
+            safe_cols = [col for col in ["event_name", "event_city", "event_country", "event_start", "event_end", "event_format"] if col in events]
+            return events.loc[events["status"].eq("Approved"), safe_cols].copy()
         except Exception:
             return pd.DataFrame()
 
@@ -292,7 +298,7 @@ with tab_upcoming:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_resources:
+with section(tab_resources):
     st.markdown("### Speaker resource hub")
     r_brand, r_talk, r_prep, r_faq = st.tabs(["Brand Kit","Talk Templates","Speaker Prep","FAQ"])
 
@@ -357,14 +363,18 @@ with tab_resources:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: TALK FEEDBACK
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_feedback:
+with section(tab_feedback):
     if _audience_mode:
         # ── Audience rating mode ──────────────────────────────────────────────
+        from html import escape
+        safe_speaker = escape(_speaker_param)
+        safe_event = escape(_event_param)
+        safe_talk = escape(_talk_param)
         st.markdown(f"""
         <div class="page-hero" style="background:linear-gradient(135deg,#0E2346,#1B3A6B);">
           <div class="eyebrow">Rate this Talk</div>
-          <h1>{_talk_param}</h1>
-          <p><strong style="color:#fff;">{_speaker_param}</strong> · {_event_param}</p>
+          <h1>{safe_talk}</h1>
+          <p><strong style="color:#fff;">{safe_speaker}</strong> · {safe_event}</p>
         </div>""", unsafe_allow_html=True)
 
         if st.session_state.get("sp_fb_done"):
@@ -429,7 +439,10 @@ with tab_feedback:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: BOOK YOUR TRAVEL
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_travel:
+with section(tab_travel):
+    st.warning("Travel booking and reimbursement are paused until verified event assignments and private storage are configured. Contact the program team for urgent requests.")
+    raise SectionDone
+
     st.markdown("### Book your travel")
     st.markdown(
         "Fill in this form and our travel partner **Navan** will book your flights and hotel. "
@@ -437,6 +450,10 @@ with tab_travel:
     )
 
     if st.session_state.get("sp_travel_done"):
+        st.success("Travel request recorded. Automated notification is not enabled; contact the program team to confirm processing.")
+        raise SectionDone
+
+    if False:
         uber_code_tv = st.session_state.get("sp_travel_uber_code", "")
         if uber_code_tv:
             st.markdown(f"""<div class="success-box">
@@ -454,7 +471,7 @@ with tab_travel:
             st.session_state.pop("sp_travel_done", None)
             st.session_state.pop("sp_travel_uber_code", None)
             st.rerun()
-        st.stop()
+        raise SectionDone
 
     # ── Section 1: Personal details ───────────────────────────────────
     st.markdown('<div class="step-label">Section 1 of 4</div>', unsafe_allow_html=True)
@@ -648,25 +665,7 @@ with tab_travel:
             tv_notes or "", uber_code or "", "Pending Booking",
         ]
         if append_row("Travel_Details", row):
-            # Notify Navan team + Aba
-            send_gmail(
-                ["navan-team@snowflake.com", "aba.micah@snowflake.com"],
-                f"New Travel Request — {passport_name} — {tv_event_name} ({tv_event_city})",
-                f"""<div style="font-family:Inter,Arial,sans-serif;max-width:600px;">
-                <h2 style="color:#0E2346;">New Speaker Travel Request</h2>
-                <p>A Community Voices speaker has submitted a travel booking request.</p>
-                <table style="border-collapse:collapse;width:100%;margin:16px 0;">
-                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Traveler</td><td style="padding:8px;border:1px solid #E2E8F0;">{passport_name}</td></tr>
-                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Email</td><td style="padding:8px;border:1px solid #E2E8F0;">{tv_email.strip()}</td></tr>
-                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event</td><td style="padding:8px;border:1px solid #E2E8F0;">{tv_event_name} — {tv_event_city}</td></tr>
-                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event date</td><td style="padding:8px;border:1px solid #E2E8F0;">{tv_event_date}</td></tr>
-                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Flights</td><td style="padding:8px;border:1px solid #E2E8F0;">{fly_from} → {fly_to}<br>{outbound_date} — {return_date} ({seat_class})</td></tr>
-                <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Hotel</td><td style="padding:8px;border:1px solid #E2E8F0;">{hotel_checkin} → {hotel_checkout} ({hotel_pref})</td></tr>
-                </table>
-                <p><a href="https://nhyi-streamlit-snowflake-community-voices--streamlit-app-an16ay.streamlit.app/Navan_Portal" style="display:inline-block;padding:10px 24px;background:#29B5E8;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">Open Navan Portal →</a></p>
-                <p style="color:#718096;font-size:0.85rem;">This is an automated notification from the Community Voices platform.</p>
-                </div>""",
-            )
+            # Legacy direct-email path is disabled until routed outbox delivery is configured.
             st.session_state["sp_travel_done"] = True
             st.session_state["sp_travel_uber_code"] = uber_code or ""
             st.rerun()
@@ -676,7 +675,9 @@ with tab_travel:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: UBER REQUEST
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_uber:
+with section(tab_uber):
+    st.warning("Uber requests are paused until verified event assignments are configured.")
+    raise SectionDone
     st.markdown("### Request an Uber gift card")
     st.markdown(
         "Approved speakers can request an Uber gift card for local transport to and from the event venue."
@@ -699,7 +700,7 @@ with tab_uber:
             st.session_state.pop("sp_uber_done", None)
             st.session_state.pop("sp_uber_code", None)
             st.rerun()
-        st.stop()
+        raise SectionDone
 
     st.markdown("**Your details**")
     ub1, ub2 = st.columns(2)
@@ -763,7 +764,10 @@ with tab_uber:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: REIMBURSEMENT
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_reimburse:
+with section(tab_reimburse):
+    if speaker_identity is None:
+        st.info("Sign in with Google (sidebar) to submit a reimbursement.")
+        raise SectionDone
     import uuid as _uuid
 
     st.markdown("### Expense reimbursement")
@@ -771,6 +775,10 @@ with tab_reimburse:
         "Submit out-of-pocket expenses for your Community Voices speaking engagement. "
         "You'll receive a confirmation ID — use it as the subject when emailing your receipts."
     )
+
+    if st.session_state.get("sp_reimb_done"):
+        st.success("Reimbursement request recorded. Check your confirmation ID below.")
+        raise SectionDone
 
     # ── Success state ─────────────────────────────────────────────────────────
     if st.session_state.get("sp_reimb_done"):
@@ -789,7 +797,7 @@ with tab_reimburse:
             st.session_state.pop("sp_reimb_done", None)
             st.session_state.pop("sp_reimb_conf_id", None)
             st.rerun()
-        st.stop()
+        raise SectionDone
 
     EXPENSE_CATEGORIES = ["Meals", "Ground transport", "Accommodation", "Registration fee", "Other"]
     CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "INR", "SGD", "Other"]
@@ -888,15 +896,14 @@ with tab_reimburse:
         )
 
         rf_receipts = st.file_uploader(
-            "Upload receipts (optional)",
-            type=["pdf", "png", "jpg", "jpeg", "heic", "webp", "gif", "tiff"],
+            "Upload receipts (images or PDFs)",
+            type=["png", "jpg", "jpeg", "pdf", "heic"],
             accept_multiple_files=True,
             key="rf_receipts",
-            help="Accepted formats: PDF, PNG, JPG, HEIC, WEBP. Max 10 MB per file.",
         )
 
         st.info(
-            "You can upload receipts above **or** email them separately to **aba.micah@snowflake.com** "
+            "Upload receipts above **or** email them separately to **aba.micah@snowflake.com** "
             "with subject: **Receipts — [Your Confirmation ID]**. "
             "Reimbursements are processed within **10 business days** of receipt approval.",
             icon="🧾",
