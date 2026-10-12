@@ -39,7 +39,7 @@ def load_tabs(read) -> dict:
 
 
 def publish_draft(tabs: dict, today, *, make_doc, slack, dm_user: str, admin_url: str = "",
-                  workflow_counts: dict | None = None) -> Outcome:
+                  workflow_counts: dict | None = None, include_recap: bool = False) -> Outcome:
     start, end = rc.week_bounds(today)
     s = rc.summarize(tabs, start, end, workflow_counts)
     rid = rc.recap_id(s)
@@ -55,8 +55,9 @@ def publish_draft(tabs: dict, today, *, make_doc, slack, dm_user: str, admin_url
         "week_start": start.isoformat(), "week_end": end.isoformat(),
         "created_at": rc.now_utc().isoformat(timespec="seconds"), "status": ops.DRAFT, "doc_url": doc_url,
         "slack_text": slack_text, "email_html": html_body,
-        "send_result": f"doc_failed:{reason}" if reason else ""})
-    if existing:
+        "send_result": f"doc_failed:{reason}" if reason else (existing or {}).get("send_result", "")})
+    dm_retry = bool(existing) and "dm:failed" in existing.get("send_result", "")
+    if existing and not dm_retry:
         return Outcome(True, f"Updated the existing draft {rid} (no second DM).", rid, doc_url)
     lines = [f"*Recap ready* for {start:%b %d}–{end:%b %d}."]
     if doc_url:
@@ -65,11 +66,17 @@ def publish_draft(tabs: dict, today, *, make_doc, slack, dm_user: str, admin_url
         lines.append(f"(Google Doc couldn't be created: `{reason}`. The text is in Workflow admin.)")
     if admin_url:
         lines.append(f"<{admin_url}|Review and approve in Workflow admin → Recaps>")
+    if include_recap:                       # DM goes only to Aba, so the full recap can be included
+        lines += ["", slack_text]
+    current = f"doc_failed:{reason}" if reason else (existing or {}).get("send_result", "")
+    prior = ";".join(x for x in current.split(";") if x and x != "dm:failed")
     try:
         slack.send_mrkdwn(dm_user, "\n".join(lines))
     except DeliveryError as e:
+        _set(rid, send_result=";".join(x for x in (prior, "dm:failed") if x))     # retried on the next run
         return Outcome(False, f"Draft saved, but the Slack DM failed: {e}", rid, doc_url)
-    return Outcome(True, "Draft saved and DM sent.", rid, doc_url)
+    _set(rid, send_result=prior)
+    return Outcome(True, "Draft saved and DM sent." if not dm_retry else "DM sent (retry).", rid, doc_url)
 
 
 def _set(rid, **fields):
