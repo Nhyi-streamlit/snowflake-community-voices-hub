@@ -8,6 +8,10 @@ pages = {
     "": [
         st.Page("pages/0_Homepage.py", title="Homepage", icon=":material/home:", default=True),
         st.Page("pages/1_Speaker_Portal.py", title="Speaker Portal", icon=":material/mic:"),
+        # Public landing page for event organizers; the page itself handles Google sign-in.
+        # Keeps the /Vendor_Portal URL that has already been shared with vendors.
+        st.Page("pages/2_Vendor_Portal.py", title="Vendor Portal", icon=":material/storefront:",
+                url_path="Vendor_Portal"),
     ],
 }
 
@@ -38,7 +42,6 @@ else:
         st.logout()
     pages[""] += [
         st.Page("pages/5_Workspace.py", title="My event workspace", icon=":material/folder:", url_path="workspace"),
-        st.Page("pages/2_Vendor_Portal.py", title="Vendor Portal", icon=":material/storefront:"),
     ]
 
 pages["Program team"] = [

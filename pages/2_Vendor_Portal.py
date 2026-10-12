@@ -1,247 +1,439 @@
+"""Vendor & Event Organizer Portal.
+
+Public landing page for signed-out visitors; after Google sign-in, a guided flow to register
+an event, a validated bulk upload, and a "My events" view scoped to the verified email.
+Submissions go through utils.vendor_backend (workflow service, or Google Sheets fallback).
+"""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from datetime import datetime, date
-from io import StringIO
-import streamlit as st
-import pandas as pd
-import requests as _requests
-from utils.styles import inject_css
-from utils.sections import SectionDone, section
-from utils.sheets import append_row, read_tab, get_access_token
-from utils.confirmation import generate_confirmation_id
+from datetime import date
 
-st.set_page_config(
-    page_title="Vendor Portal — Community Voices",
-    page_icon="🏟️",
-    layout="centered",
-    initial_sidebar_state="expanded",
-)
+import pandas as pd
+import streamlit as st
+
+from utils import vendor_backend as vb
+from utils import vendor_validation as vv
+from utils.styles import inject_css
+from workflow.runtime import form_token, get_actor, rotate_token
+from workflow.ui import md
+
+st.set_page_config(page_title="Vendor Portal — Community Voices", page_icon="🏟️", layout="centered")
 inject_css()
 
-from utils.identity import current_identity
-vendor_identity = current_identity(st.user)
-if vendor_identity is None:
-    st.error("Sign in with a verified Google account to use the vendor portal.")
-    st.stop()
+STEPS = ["About you", "Event", "Speaker request", "Review & submit"]
+VIEWS = ["Register an event", "Bulk upload", "My events", "Help"]
+BADGE = {"Pending": ("orange", ":material/hourglass_top:"), "Approved": ("green", ":material/check_circle:"),
+         "Waitlisted": ("blue", ":material/schedule:"), "Not a Fit": ("red", ":material/cancel:"),
+         "Not a fit": ("red", ":material/cancel:"), "Closed": ("gray", ":material/event_busy:")}
+LABEL = {k: v[0] + (" *" if k in vv.REQUIRED else "") for k, v in vv.FIELDS.items()}
+HELP = {
+    "event_website": "Full link, e.g. https://yourevent.com",
+    "cfp_link": "Where speakers submit talks, if you run a CFP",
+    "cfp_deadline": "Must be on or before the event start date",
+    "speaker_topic": "What should a Snowflake community speaker talk about? Include audience level if you can.",
+}
+FAQ = [
+    ("Who can register an event?",
+     "Conference organizers, meetup hosts, universities, and partners running events where a Snowflake "
+     "community speaker (Data Superhero, Streamlit Creator, or community member) would be a good fit."),
+    ("What happens after I submit?",
+     "You get a reference ID right away. The Community Voices team reviews every event within 5 business days. "
+     "Approved events are listed for qualified community speakers, and you'll hear from us when a speaker is matched."),
+    ("Can I change my submission?",
+     "Yes — while it's Pending, open **My events** and choose **Edit**. Once reviewed, email us with your reference ID."),
+    ("I have lots of events. Is there a faster way?",
+     "Use **Bulk upload**: download the template, fill one row per event, and upload the CSV or Excel file. "
+     "We check every row before anything is submitted."),
+    ("Why do I need to sign in with Google?",
+     "Signing in verifies your email so only you can see and edit your events. Any Google account works, "
+     "including Gmail and Google Workspace accounts. We only receive your name and email."),
+    ("Who do I contact for help?", "Email community@snowflake.com and include your reference ID if you have one."),
+]
 
-st.markdown("""
+
+def _secret(name, default=None):
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return default
+
+
+def hero(title, body):
+    # Static copy only; no user data is rendered as HTML on this page.
+    st.markdown(f"""
 <div class="page-hero" style="background:linear-gradient(135deg,#44337A 0%,#6B46C1 100%);">
   <div class="eyebrow">Vendor &amp; Event Organizer Portal</div>
-  <h1>Register your event</h1>
-  <p>
-    Register a single event or upload multiple events at once.
-    Once approved, your event will appear on the public Events Board and
-    qualified community speakers can apply directly.
-  </p>
-</div>
-""", unsafe_allow_html=True)
+  <h1>{title}</h1>
+  <p>{body}</p>
+</div>""", unsafe_allow_html=True)
 
-st.info("Event organizers now propose events and track speaker requests, deadlines, and materials in My event workspace.")
-st.page_link("pages/5_Workspace.py", label="Open My event workspace", icon=":material/folder:")
 
-tab_single, tab_bulk, tab_mine = st.tabs([
-    "Register Single Event",
-    "Bulk Upload (CSV / Excel / Google Sheets)",
-    "My Submissions",
-])
+def faq():
+    for q, a in FAQ:
+        with st.expander(q):
+            st.markdown(a)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 1: SINGLE EVENT FORM
+# SIGNED OUT: public landing page
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_single):
-    st.warning("New vendor submissions are paused until the event workflow store and routed notifications are configured. Existing records remain intact.")
-    raise SectionDone
-    if st.session_state.get("vnd_submitted"):
-        eid=st.session_state.get("vnd_eid","")
-        st.markdown(f"""<div class="success-box"><h2>Event registered!</h2>
-        <p>The Community Voices team will review and be in touch within 5 business days.</p></div>
-        <div class="id-box" style="margin-top:24px;"><div class="label">Event Reference ID</div>
-        <div class="id">{eid}</div></div>""", unsafe_allow_html=True)
-        st.info("Save this ID — reference it in any follow-up emails.", icon="📋")
-        if st.button("Register another event", key="vnd_another"):
-            st.session_state.pop("vnd_submitted",None); st.session_state.pop("vnd_eid",None); st.rerun()
-        raise SectionDone
+actor = get_actor()
+logged_in = bool(getattr(st.user, "is_logged_in", False))
 
-    # About You
-    st.markdown('<div class="section-title">About You</div>', unsafe_allow_html=True)
-    c1,c2=st.columns(2)
-    with c1: org_name=st.text_input("Your full name *", key="vnd_name")
-    with c2: st.text_input("Verified email address", value=vendor_identity.email, disabled=True, key="vnd_email")
-    org_email=vendor_identity.email
-    org_org=st.text_input("Organization *", key="vnd_org")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    # Event Details
-    st.markdown('<div class="section-title">Event Details</div>', unsafe_allow_html=True)
-    ev_name=st.text_input("Event name *", key="vnd_evname")
-    c5,c6=st.columns(2)
-    with c5: ev_start=st.date_input("Start date *", min_value=date.today(), key="vnd_start")
-    with c6: ev_city=st.text_input("City *", key="vnd_city")
-    ev_web=st.text_input("Event website", key="vnd_evweb", placeholder="Optional")
-    c7,c8=st.columns(2)
-    with c7: ev_country=st.text_input("Country", key="vnd_country", placeholder="Optional")
-    with c8: ev_fmt=st.selectbox("Format",["","In-person conference","Hybrid conference","Virtual conference","Community meetup (in-person)","Community meetup (virtual)","University / academic","Other"], key="vnd_fmt")
-    ev_desc=st.text_area("Describe your event", height=80, key="vnd_desc", placeholder="Optional — brief description of your event")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    # Speaker Request
-    st.markdown('<div class="section-title">Speaker Request</div>', unsafe_allow_html=True)
-    spk_topic=st.text_area("What topic would you like a speaker on? *", height=90, key="vnd_topic")
-    cfp_link=st.text_input("CFP / speaker submission link", key="vnd_cfp", placeholder="Optional")
-    st.markdown("<hr class='divider'>", unsafe_allow_html=True)
-
-    ok=all([org_name,org_email,org_org,ev_name,ev_city,spk_topic])
-    if not ok: st.caption("Complete all required fields (*) to submit.")
-    if st.button("Register Event & Request Speaker", type="primary", use_container_width=True, disabled=not ok, key="vnd_submit"):
-        now=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        eid=generate_confirmation_id().replace("CV-","EV-")
-        rid=generate_confirmation_id().replace("CV-","SR-")
-        ev_row=[eid,now,"Pending",org_name,org_email,org_org,"","",
-                ev_name,ev_web,str(ev_start),"",ev_city,ev_country,ev_fmt,"",
-                "",ev_desc,"","",""]
-        req_row=[rid,now,"Pending",eid,ev_name,spk_topic,"",
-                 "","",cfp_link or "","","",""]
-        ok1=append_row("Events",ev_row); ok2=append_row("Speaker_Requests",req_row)
-        if ok1 and ok2:
-            st.session_state["vnd_submitted"]=True; st.session_state["vnd_eid"]=eid; st.rerun()
+if actor is None or not actor.email:
+    hero("Bring a Snowflake community speaker to your event",
+         "Register your conference, meetup, or university event. Once approved, qualified Snowflake "
+         "community speakers can be matched to it.")
+    if logged_in and actor is None:
+        st.warning("Your Google account doesn't have a verified email address, so we can't link events to it. "
+                   "Sign out and use a Google account with a verified email.", icon=":material/mark_email_unread:")
+        if st.button("Sign out", icon=":material/logout:"):
+            st.logout()
+    elif actor is not None and not actor.email:
+        st.info("You're unlocked as the program team. Sign in with Google to see the vendor experience.")
+    st.subheader("How it works")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        with st.container(border=True):
+            st.markdown("**1. Sign in**")
+            st.caption("Use any Google account — Gmail works.")
+    with c2:
+        with st.container(border=True):
+            st.markdown("**2. Register your event**")
+            st.caption("About 5 minutes. One event, or many at once by spreadsheet.")
+    with c3:
+        with st.container(border=True):
+            st.markdown("**3. Get matched**")
+            st.caption("We review within 5 business days and connect you with a speaker.")
+    if not logged_in:
+        if _secret("auth"):
+            if st.button("Sign in with Google", type="primary", icon=":material/login:", width="stretch",
+                         key="vnd_login"):
+                st.login()
         else:
-            st.error("Submission failed. Please try again or email community@snowflake.com.")
+            st.info("Sign-in is being set up. In the meantime, email community@snowflake.com to register your event.",
+                    icon=":material/construction:")
+    st.subheader("Questions")
+    faq()
+    st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2: BULK UPLOAD
+# SIGNED IN
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_bulk):
-    st.warning("Bulk intake is paused until the workflow backend is configured.")
-    raise SectionDone
-    if st.session_state.get("vnd_bulk_done"):
-        n=st.session_state.get("vnd_bulk_n",0)
-        st.markdown(f'<div class="success-box"><h2>{n} event(s) submitted!</h2><p>The team will review within 5 business days.</p></div>', unsafe_allow_html=True)
-        if st.button("Upload another batch", key="vnd_bulk_reset"):
-            st.session_state.pop("vnd_bulk_done",None); st.session_state.pop("vnd_bulk_n",None); st.rerun()
-        raise SectionDone
+ss = st.session_state
+ss.setdefault("vnd_step", 0)
+ss.setdefault("vnd_draft", {})
+ss.setdefault("vnd_errors", {})
+ss.setdefault("vnd_view", VIEWS[0])
 
-    st.markdown("### Upload multiple events at once")
-    TEMPLATE_COLS=["organizer_name","organizer_email","organizer_org","event_name","event_website",
-                   "event_start","event_end","event_city","event_country","event_format","expected_audience",
-                   "event_description","speaker_topic","topic_tags","session_format","cfp_link","cfp_deadline","notes"]
-    st.download_button("Download CSV template",
-        data=pd.DataFrame(columns=TEMPLATE_COLS).to_csv(index=False),
-        file_name="cv_events_template.csv", mime="text/csv", key="vnd_tpl")
+hero("Register your event", "Tell us about your event and the kind of speaker you're looking for.")
 
-    st.markdown("---")
-    method=st.radio("Upload method",["Upload CSV or Excel file","Paste Google Sheets URL"], horizontal=True, key="vnd_method")
-    df_up=None
-
-    if method=="Upload CSV or Excel file":
-        f=st.file_uploader("Choose file",type=["csv","xlsx","xls"],key="vnd_upload")
-        if f:
-            try:
-                df_up=pd.read_csv(f,dtype=str).fillna("") if f.name.endswith(".csv") else pd.read_excel(f,dtype=str).fillna("")
-                st.success(f"Loaded {len(df_up)} row(s) from **{f.name}**")
-            except Exception as e:
-                st.error(f"Could not parse: {e}")
+if actor.is_admin:
+    m = vb.mode()
+    if m == vb.WORKFLOW:
+        st.info("**Admin · Mode: Workflow store.** Submissions are recorded in Snowflake and appear in Workflow admin.",
+                icon=":material/database:")
     else:
-        gs_url=st.text_input("Google Sheets URL",key="vnd_gs_url")
-        if gs_url and st.button("Load Sheet",key="vnd_load_gs"):
-            import re
-            m=re.search(r"/spreadsheets/d/([a-zA-Z0-9_-]+)",gs_url)
-            if not m: st.error("Could not extract Sheet ID.")
-            else:
-                gs_id=m.group(1)
-                try:
-                    token=get_access_token()
-                    resp=_requests.get(f"https://sheets.googleapis.com/v4/spreadsheets/{gs_id}/values/A1:ZZ10000",
-                        headers={"Authorization":f"Bearer {token}"},timeout=15)
-                    resp.raise_for_status()
-                    rows=resp.json().get("values",[])
-                    if rows and len(rows)>=2:
-                        h=rows[0]; d=[r+[""]*(len(h)-len(r)) for r in rows[1:]]
-                        df_up=pd.DataFrame(d,columns=h).fillna("")
-                        st.success(f"Loaded {len(df_up)} row(s)")
+        st.warning("**Admin · Mode: Google Sheets fallback.** `[connections.cv_workflow]` is not configured, so "
+                   "submissions go to the Events / Speaker_Requests tabs and appear in the Admin Portal.",
+                   icon=":material/table:")
+
+top_l, top_r = st.columns([3, 2], vertical_alignment="center")
+top_l.caption(f"Signed in as {md(actor.email)}")
+with top_r:
+    try:
+        st.page_link("pages/5_Workspace.py", label="Event workspace (materials)", icon=":material/folder:")
+    except Exception:      # page not registered in this navigation (e.g. page run standalone)
+        st.markdown("[Event workspace (materials)](/workspace)")
+
+
+def _widget_key(f):
+    return f"vnd_f_{f}"
+
+
+def _load_into_widgets(draft, overwrite=False):
+    """Prefill widgets from a draft (used for Edit, and when a step is shown again)."""
+    for f in vv.FIELDS:
+        k = _widget_key(f)
+        if k in ss and not overwrite:
+            continue
+        v = draft.get(f, "")
+        if f in vv.DATE_FIELDS:
+            ss[k] = vv.to_date(v)
+        elif f == "event_format":
+            ss[k] = v if v in vv.FORMATS else None
+        else:
+            ss[k] = v or ""
+
+
+def _collect(fields):
+    for f in fields:
+        v = ss.get(_widget_key(f))
+        ss.vnd_draft[f] = v.isoformat() if isinstance(v, date) else (v or "")
+
+
+def _reset_form():
+    ss.vnd_step, ss.vnd_draft, ss.vnd_errors = 0, {}, {}
+    ss.pop("vnd_edit_ref", None)
+    ss.pop("vnd_done", None)
+    for f in vv.FIELDS:
+        ss.pop(_widget_key(f), None)
+
+
+def _go(step):
+    ss.vnd_step = step
+
+
+def _next():
+    fields = vv.STEP_FIELDS[ss.vnd_step + 1]
+    _collect(fields)
+    errs = vv.validate(ss.vnd_draft, fields)
+    ss.vnd_errors = errs
+    if not errs:
+        ss.vnd_step += 1
+
+
+def _back():
+    _collect(vv.STEP_FIELDS.get(ss.vnd_step + 1, []))     # keep what was typed on this step
+    ss.vnd_errors = {}
+    ss.vnd_step = max(0, ss.vnd_step - 1)
+
+
+def _start_edit(ev):
+    _reset_form()
+    ss.vnd_draft = dict(ev.details)
+    ss.vnd_edit_ref = ev.ref
+    _load_into_widgets(ss.vnd_draft, overwrite=True)
+    ss.vnd_view = VIEWS[0]
+
+
+def _start_new():
+    _reset_form()
+    ss.vnd_view = VIEWS[0]
+
+
+def field(f, kind="text", **kw):
+    k = _widget_key(f)
+    if k not in ss and ss.vnd_draft:
+        _load_into_widgets(ss.vnd_draft)     # widget state is dropped when a step isn't shown
+    label, help_ = LABEL[f], HELP.get(f)
+    if kind == "text":
+        st.text_input(label, key=k, help=help_, max_chars=vv.FIELDS[f][1], **kw)
+    elif kind == "area":
+        st.text_area(label, key=k, help=help_, max_chars=vv.FIELDS[f][1], height=110, **kw)
+    elif kind == "date":
+        if k not in ss:
+            ss[k] = None
+        st.date_input(label, key=k, help=help_, format="YYYY-MM-DD", **kw)
+    elif kind == "select":
+        if k not in ss:
+            ss[k] = None
+        st.selectbox(label, vv.FORMATS, key=k, placeholder="Choose a format", **kw)
+    if f in ss.vnd_errors:
+        st.error(ss.vnd_errors[f], icon=":material/error:")
+
+
+view = st.radio("Section", VIEWS, key="vnd_view", horizontal=True, label_visibility="collapsed")
+st.divider()
+
+# ── Register an event (guided flow) ────────────────────────────────────────────
+if view == "Register an event":
+    done = ss.get("vnd_done")
+    if done:
+        st.success(done["message"], icon=":material/task_alt:")
+        st.markdown("**Your reference ID** — save it for any follow-up emails:")
+        st.code(done["ref"], language=None)
+        st.markdown("#### What happens next")
+        st.markdown(
+            "1. **Now** — your event is recorded as *Pending*. You can still edit it from **My events**.\n"
+            "2. **Within 5 business days** — the Community Voices team reviews it.\n"
+            "3. **If approved** — it's listed for qualified community speakers.\n"
+            "4. **Speaker matched** — we email you the speaker's details and next steps.\n"
+            "5. **Before the event** — share logistics and materials in your event workspace."
+        )
+        c1, c2 = st.columns(2)
+        c1.button("Register another event", on_click=_start_new, width="stretch", key="vnd_another")
+        c2.button("View my events", on_click=lambda: ss.update(vnd_view="My events"), width="stretch",
+                  key="vnd_view_mine")
+    else:
+        editing = ss.get("vnd_edit_ref")
+        if editing:
+            st.info(f"Editing pending event **{md(editing)}**.", icon=":material/edit:")
+        step = ss.vnd_step
+        st.progress((step + 1) / len(STEPS), text=f"Step {step + 1} of {len(STEPS)} · {STEPS[step]}")
+        st.caption("Fields marked * are required.")
+
+        if step == 0:
+            st.text_input("Verified email", value=actor.email, disabled=True, key="vnd_email_ro",
+                          help="Comes from your Google sign-in. We'll contact you here.")
+            field("organizer_name")
+            field("organizer_org")
+        elif step == 1:
+            field("event_name")
+            c1, c2 = st.columns(2)
+            with c1:
+                field("event_start", "date", min_value=date.today())
+            with c2:
+                field("event_end", "date", min_value=date.today())
+            c1, c2 = st.columns(2)
+            with c1:
+                field("event_city")
+            with c2:
+                field("event_country")
+            field("event_format", "select")
+            field("event_website", placeholder="https://")
+            field("expected_audience", placeholder="e.g. 300")
+            field("event_description", "area")
+        elif step == 2:
+            field("speaker_topic", "area")
+            field("cfp_link", placeholder="https://")
+            field("cfp_deadline", "date")
+        else:
+            d = ss.vnd_draft
+            for s_idx, title in ((1, "Event"), (2, "Speaker request"), (0, "About you")):
+                with st.container(border=True):
+                    h1, h2 = st.columns([4, 1], vertical_alignment="center")
+                    h1.markdown(f"**{title}**")
+                    h2.button("Edit", key=f"vnd_edit_step_{s_idx}", on_click=_go, args=(s_idx,))
+                    fields = vv.STEP_FIELDS[s_idx + 1]
+                    if s_idx == 0:
+                        st.markdown(f"Email: {md(actor.email)}")
+                    for f in fields:
+                        if d.get(f):
+                            st.markdown(f"{vv.FIELDS[f][0]}: {md(d[f])}")
+            errs = vv.validate(d)
+            if errs:
+                st.error("Please fix: " + " ".join(errs.values()))
+
+        nav_l, nav_r = st.columns(2)
+        if step > 0:
+            nav_l.button("Back", on_click=_back, width="stretch", key="vnd_back", icon=":material/arrow_back:")
+        else:
+            nav_l.button("Cancel" if editing else "Clear form", on_click=_start_new, width="stretch",
+                         key="vnd_clear")
+        if step < 3:
+            nav_r.button("Next", type="primary", on_click=_next, width="stretch", key="vnd_next",
+                         icon=":material/arrow_forward:")
+        else:
+            label = "Save changes" if editing else "Submit event"
+            if nav_r.button(label, type="primary", width="stretch", key="vnd_submit",
+                            disabled=bool(vv.validate(ss.vnd_draft))):
+                token_name = f"vendor_edit_{editing}" if editing else "vendor_event"
+                with st.spinner("Saving…"):
+                    if editing:
+                        out = vb.update_pending(actor, editing, ss.vnd_draft, form_token(token_name))
                     else:
-                        st.warning("Sheet is empty.")
-                except Exception as e:
-                    try:
-                        r2=_requests.get(f"https://docs.google.com/spreadsheets/d/{gs_id}/export?format=csv",timeout=15)
-                        r2.raise_for_status()
-                        df_up=pd.read_csv(StringIO(r2.text),dtype=str).fillna("")
-                        st.success(f"Loaded {len(df_up)} row(s) via public export")
-                    except Exception as e2:
-                        st.error(f"Could not read sheet: {e2}")
-
-    if df_up is not None and not df_up.empty:
-        df_up.columns=[c.strip().lower().replace(" ","_") for c in df_up.columns]
-        st.markdown("---")
-        st.markdown(f"**Preview — {len(df_up)} row(s)**")
-        st.dataframe(df_up,use_container_width=True,hide_index=True)
-        req_cols={"event_name","event_city","event_country","organizer_name","organizer_email"}
-        missing=req_cols-set(df_up.columns)
-        if missing:
-            st.warning(f"Missing required columns: **{', '.join(sorted(missing))}**")
-        else:
-            if st.button("Submit All Events",type="primary",use_container_width=True,key="vnd_bulk_sub"):
-                now=datetime.now().strftime("%Y-%m-%d %H:%M:%S"); ok_count=0
-                prog=st.progress(0)
-                for i,row in df_up.iterrows():
-                    eid=generate_confirmation_id().replace("CV-","EV-")
-                    rid=generate_confirmation_id().replace("CV-","SR-")
-                    ev_row=[eid,now,"Pending",
-                            row.get("organizer_name",""),vendor_identity.email,
-                            row.get("organizer_org",""),row.get("organizer_role",""),row.get("org_website",""),
-                            row.get("event_name",""),row.get("event_website",""),
-                            row.get("event_start",row.get("event_date","")),row.get("event_end",""),
-                            row.get("event_city",""),row.get("event_country",""),
-                            row.get("event_format",""),row.get("expected_audience",""),
-                            row.get("community_alignment",""),row.get("event_description",row.get("description","")),
-                            row.get("how_heard",""),row.get("notes",row.get("additional_notes","")),""]
-                    req_row=[rid,now,"Pending",eid,row.get("event_name",""),
-                             row.get("speaker_topic",row.get("topic","")),row.get("topic_tags",""),
-                             row.get("session_format",""),row.get("audience_level",""),
-                             row.get("cfp_link",""),row.get("cfp_deadline",""),"",""]
-                    if append_row("Events",ev_row) and append_row("Speaker_Requests",req_row):
-                        ok_count+=1
-                    prog.progress((i+1)/len(df_up))
-                st.session_state["vnd_bulk_done"]=True; st.session_state["vnd_bulk_n"]=ok_count; st.rerun()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TAB 3: MY SUBMISSIONS
-# ══════════════════════════════════════════════════════════════════════════════
-with section(tab_mine):
-    st.markdown("### Check the status of your submitted events")
-    st.info("Legacy submissions are not available in the protected portal until an administrator verifies and assigns them. New event assignments appear in My event workspace.")
-    check_sub=False
-    check_email=vendor_identity.email
-
-    if check_sub:
-        if not check_email:
-            st.warning("Please enter your email.")
-        else:
-            with st.spinner("Looking up..."):
-                try: df_ev=read_tab("Events")
-                except Exception as ex: st.error(f"Database error: {ex}"); raise SectionDone
-            if df_ev.empty or "organizer_email" not in df_ev.columns:
-                st.info("No events found.")
-            else:
-                mine=df_ev[df_ev["organizer_email"].str.strip().str.lower()==vendor_identity.email]
-                if mine.empty:
-                    st.info(f"No events found for **{check_email}**. Double-check the email you registered with.")
+                        out = vb.submit_event(actor, ss.vnd_draft, form_token(token_name))
+                if out.ok:
+                    rotate_token(token_name)
+                    msg = "Changes saved." if editing else "Event submitted — thank you!"
+                    _reset_form()
+                    ss.vnd_done = {"ref": out.ref, "message": msg}
+                    st.rerun()
                 else:
-                    st.markdown(f"**{len(mine)} event(s) found**")
-                    STATUS_COLORS={"Pending":"🟡","Approved":"🟢","Waitlisted":"🔵","Not a Fit":"🔴"}
-                    for _,ev in mine.iterrows():
-                        icon=STATUS_COLORS.get(ev.get("status",""),("⚪"))
-                        st.markdown(f"""
-                        <div class="info-card">
-                          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
-                            <span>{icon}</span>
-                            <strong>{ev.get('event_name','')}</strong>
-                            <span style="font-size:0.8rem;color:#718096;">· {ev.get('status','')}</span>
-                          </div>
-                          <p style="margin:0;font-size:0.88rem;color:#4A5568;">
-                            📍 {ev.get('event_city','')}, {ev.get('event_country','')} &nbsp;·&nbsp;
-                            📅 {ev.get('event_start','')}
-                            &nbsp;·&nbsp; Ref: <code>{ev.get('event_id','')}</code>
-                          </p>
-                          {"<p style='font-size:0.85rem;color:#718096;margin-top:4px;'>Note: " + ev.get('admin_notes','') + "</p>" if ev.get('admin_notes','').strip() else ""}
-                        </div>""", unsafe_allow_html=True)
+                    st.error(out.message, icon=":material/error:")
+
+# ── Bulk upload ────────────────────────────────────────────────────────────────
+elif view == "Bulk upload":
+    st.markdown("#### Upload several events at once")
+    st.markdown("1. Download the template (it includes one example row — replace it).\n"
+                "2. Add one row per event. Dates use `YYYY-MM-DD`.\n"
+                "3. Upload the file. We check every row before anything is submitted.")
+    tpl = pd.DataFrame([vv.EXAMPLE_ROW], columns=vv.BULK_COLUMNS)
+    st.download_button("Download template (CSV)", tpl.to_csv(index=False), file_name="cv_events_template.csv",
+                       mime="text/csv", icon=":material/download:", key="vnd_tpl")
+    with st.expander("Column guide"):
+        st.dataframe(pd.DataFrame([{"column": c, "required": "Yes" if c in vv.REQUIRED else "",
+                                    "notes": ", ".join(vv.FORMATS) if c == "event_format" else ""}
+                                   for c in vv.BULK_COLUMNS]), hide_index=True, width="stretch")
+
+    if ss.get("vnd_bulk_results"):
+        res = pd.DataFrame(ss.vnd_bulk_results)
+        n_ok = int((res["result"] == "Submitted").sum())
+        st.success(f"{n_ok} event(s) submitted. Reference IDs are in the table below.", icon=":material/task_alt:")
+        st.dataframe(res, hide_index=True, width="stretch")
+        if st.button("Upload another file", key="vnd_bulk_reset"):
+            ss.pop("vnd_bulk_results", None)
+            ss.pop("vnd_upload", None)
+            rotate_token("vendor_bulk")
+            st.rerun()
+    else:
+        up = st.file_uploader("Choose a CSV or Excel file", type=["csv", "xlsx"], key="vnd_upload")
+        if up is not None:
+            try:
+                df = vv.read_upload(up.name, up)
+            except Exception:
+                df = None
+                st.error("We couldn't read that file. Save it as CSV or .xlsx using the template and try again.")
+            if df is not None:
+                if df.empty:
+                    st.warning("That file has no rows.")
+                else:
+                    valid, errors, missing = vv.validate_bulk(df)
+                    st.markdown(f"**Preview — {len(df)} row(s)**")
+                    st.dataframe(df, hide_index=True, width="stretch")
+                    if missing:
+                        st.error("Missing required columns: " + ", ".join(missing) +
+                                 ". Download the template to see the expected headers.")
+                    else:
+                        if not errors.empty:
+                            st.error(f"{errors['row'].nunique()} row(s) need fixing. Row numbers match your file "
+                                     "(row 1 is the header).", icon=":material/error:")
+                            st.dataframe(errors, hide_index=True, width="stretch")
+                        if valid:
+                            label = (f"Submit {len(valid)} event(s)" if errors.empty else
+                                     f"Submit {len(valid)} valid row(s), skip {errors['row'].nunique()}")
+                            if st.button(label, type="primary", width="stretch", key="vnd_bulk_submit"):
+                                with st.spinner("Submitting…"):
+                                    ss.vnd_bulk_results = vb.submit_bulk(actor, valid, form_token("vendor_bulk"))
+                                st.rerun()
+
+# ── My events ──────────────────────────────────────────────────────────────────
+elif view == "My events":
+    try:
+        mine = vb.list_my_events(actor)
+    except RuntimeError as exc:
+        mine = None
+        st.error(str(exc), icon=":material/cloud_off:")
+        st.button("Try again", key="vnd_mine_retry")
+    if mine is not None:
+        if not mine:
+            st.info("You haven't registered any events with this account yet.")
+            st.button("Register an event", type="primary", on_click=_start_new, key="vnd_mine_new")
+        else:
+            st.caption(f"{len(mine)} event(s) registered with {md(actor.email)}")
+            for ev in mine:
+                d = ev.details
+                color, icon = BADGE.get(ev.status, ("gray", ":material/help:"))
+                with st.container(border=True):
+                    h1, h2 = st.columns([3, 1], vertical_alignment="center")
+                    h1.markdown(f"**{md(d.get('event_name'))}**")
+                    with h2:
+                        st.badge(ev.status, color=color, icon=icon)
+                    where = ", ".join(x for x in (d.get("event_city"), d.get("event_country")) if x)
+                    when = d.get("event_start", "") + (f" → {d['event_end']}" if d.get("event_end") else "")
+                    st.caption(f":material/location_on: {md(where)}  ·  :material/calendar_today: {md(when)}  ·  "
+                               f"Ref `{md(ev.ref)}`")
+                    if d.get("speaker_topic"):
+                        st.markdown(f"**Speaker topic:** {md(d['speaker_topic'])}")
+                    if ev.matched_speakers:
+                        st.markdown("**Matched speakers:** " + ", ".join(md(s) for s in ev.matched_speakers))
+                    elif ev.status == "Approved":
+                        st.caption("Approved — we're matching a speaker.")
+                    if ev.admin_notes:
+                        st.markdown(f"**Note from the team:** {md(ev.admin_notes)}")
+                    if ev.editable:
+                        st.button("Edit", key=f"vnd_edit_{ev.ref}", on_click=_start_edit, args=(ev,),
+                                  icon=":material/edit:")
+
+# ── Help ───────────────────────────────────────────────────────────────────────
+else:
+    st.markdown("#### How to register your event")
+    st.markdown("1. **Register an event** — four short steps; your answers are kept if you go back.\n"
+                "2. Review everything, then **Submit**. You'll get a reference ID.\n"
+                "3. Track status in **My events**. Edit while it's *Pending*.\n"
+                "4. Have many events? Use **Bulk upload** with the template.")
+    faq()
+    if st.button("Sign out", icon=":material/logout:", key="vnd_logout"):
+        st.logout()
