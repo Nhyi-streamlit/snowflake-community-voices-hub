@@ -18,9 +18,11 @@ def wired():
     runtime.OVERRIDE.clear()
 
 
-def page(path, actor):
+def page(path, actor, query=None):
     runtime.OVERRIDE["actor"] = actor
     at = AppTest.from_file(path, default_timeout=30)
+    if query:
+        at.query_params.update(query)
     at.run()
     assert not at.exception, at.exception
     return at
@@ -72,7 +74,7 @@ def test_admin_page_shows_queue_and_problems(wired):
     svc.submit_item(SPK_A, bio.item_id, text={"bio": "Hi"}, token=tok())
     svc.propose_event(VND, name="Unowned Meetup", start_date=None, city="Accra",
                                details={"description": "x"}, token=tok()).ref
-    at = page("pages/6_Workflow_Admin.py", ABA)
+    at = page("pages/6_Workflow_Admin.py", ABA, {"tab": "workflow"})
     metrics = {m.label: m.value for m in at.metric}
     assert metrics["Awaiting review"] == "2" and metrics["Events without owner"] == "1"
     assert metrics["Notification problems"] == "1"

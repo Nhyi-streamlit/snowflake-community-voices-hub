@@ -489,6 +489,50 @@ class WorkflowService:
         self._require_admin(actor)
         return self.store.list_audit(limit=limit)
 
+    def enqueue_due_reminders(self, actor: Actor, today: date, offsets=(14, 7, 2)) -> int:
+        """Record deadline reminders for speaker items still MISSING or CHANGES_REQUESTED.
+
+        Each (item, offset) is recorded once (idempotent action key). Reminders join the normal outbox and
+        are only sent by dispatch() when delivery is enabled. Returns how many reminders were recorded.
+        """
+        self._require_admin(actor)
+        recorded = 0
+        events = {e.event_id: e for e in self.store.list_events()}
+        for item in self.store.list_items(None):
+            if item.party != SPEAKER or item.status not in (MISSING, CHANGES_REQUESTED) or not item.due_date:
+                continue
+            days = (item.due_date - today).days
+            if days not in offsets or item.event_id not in events:
+                continue
+            members = self.store.list_members(event_id=item.event_id)
+            m = next((x for x in members if x.member_id == item.assignee_member_id and x.status in (ACTIVE, INVITED)),
+                     None)
+            if m is None:
+                continue
+            key = _h("reminder", item.item_id, days)
+            if self.store.action_exists(key):
+                continue
+            now = self.clock()
+            event = events[item.event_id]
+            subj, body = self._compose(event, f"{item.title} due in {days} day(s)", item)
+            notes = []
+            for channel, address in rules.channels_for(m, set(self.config.enabled_channels)) or [(NO_CHANNEL, "")]:
+                notes.append(Notification(
+                    notification_id=_h(key, m.member_id, channel), action_key=key, event_id=item.event_id,
+                    rule=f"reminder_{days}d", channel=channel,
+                    status=PENDING if channel != NO_CHANNEL else UNROUTABLE, created_at=now, next_attempt_at=now,
+                    item_id=item.item_id, recipient_member_id=m.member_id, recipient_role=m.role, address=address,
+                    subject=subj, body=body, link=self._link(item.event_id, item.item_id), deadline=item.due_date,
+                    max_attempts=self.config.max_attempts,
+                    last_error="" if channel != NO_CHANNEL else "Recipient has no configured channel.",
+                    updated_at=now))
+            res = self._commit(key, ChangeSet(
+                audit=[self._audit(key, item.event_id, "REMINDER_RECORDED", actor, ADMIN, item.item_id,
+                                   note=f"{days} days before due")],
+                notifications=notes))
+            recorded += res.status == "recorded"
+        return recorded
+
     def _get_notification(self, nid):
         return self.store.get_notification(nid)
 

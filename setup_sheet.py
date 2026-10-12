@@ -137,6 +137,13 @@ TABS = {
 }
 
 
+# Ops automation tabs (recap drafts, triage, rules, digest, content reviews) share headers with utils/ops_store.
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils.ops_store import HEADERS as _OPS_HEADERS  # noqa: E402
+TABS.update(_OPS_HEADERS)
+
+
 if __name__ == "__main__":
     sid = os.environ.get("GOOGLE_SPREADSHEET_ID")
     if not sid:

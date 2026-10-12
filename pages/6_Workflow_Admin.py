@@ -30,6 +30,27 @@ st.title("Workflow admin")
 show_flash()
 from utils import email_health
 email_health.render(actor)          # shown even when the workflow store isn't configured
+
+# Areas. The first three read the Google Sheet, so they work before the workflow store is provisioned.
+AREAS = {"needs": ":material/priority_high: Needs you", "recaps": ":material/summarize: Recaps",
+         "content": ":material/fact_check: Content checks", "workflow": ":material/inbox: Workflow"}
+if "admin_area" not in st.session_state:
+    _q = st.query_params.get("tab", "needs")
+    st.session_state["admin_area"] = _q if _q in AREAS else "needs"
+area = st.radio("Area", list(AREAS), format_func=AREAS.get, key="admin_area", horizontal=True,
+                label_visibility="collapsed",
+                on_change=lambda: st.query_params.update(tab=st.session_state["admin_area"]))
+st.divider()
+if area != "workflow":
+    from utils import ops_admin
+    if area == "needs":
+        ops_admin.render_needs_you(actor, svc)
+    elif area == "recaps":
+        ops_admin.render_recaps(actor)
+    else:
+        ops_admin.render_content(actor, svc)
+    st.stop()
+
 if svc is None:
     st.warning("Workflow store is not configured. Add the `[connections.cv_workflow]` secret (service user).")
     st.stop()

@@ -438,3 +438,61 @@ def col_letter(df: pd.DataFrame, col_name: str) -> str:
         return "A"  # fallback
     except ValueError:
         return "A"
+
+
+# ── Whole-tab replace (small summary tabs such as Digest) ────────────────────────
+
+def replace_tab(tab: str, rows: list[list]) -> bool:
+    """Clear a tab and write `rows` (first row = headers). Returns True on success."""
+    s = _secrets()
+    try:
+        token = get_access_token()
+        base = f"https://sheets.googleapis.com/v4/spreadsheets/{s['GOOGLE_SPREADSHEET_ID']}/values/"
+        h = {"Authorization": f"Bearer {token}"}
+        q = requests.utils.quote(tab)
+        if requests.post(base + f"{q}:clear", headers=h, timeout=15).status_code != 200:
+            return False
+        resp = requests.put(base + f"{q}!A1", params={"valueInputOption": "RAW"},
+                            json={"values": rows}, headers=h, timeout=15)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+# ── Google Doc from HTML (Drive upload with conversion) ─────────────────────────
+
+def create_google_doc(title: str, html_body: str, folder_id: str | None = None):
+    """Upload HTML converted to a Google Doc. Returns (url, reason); reason is "" on success.
+
+    Uses the Drive scope receipts already rely on. A missing scope comes back as a reason such as
+    ACCESS_TOKEN_SCOPE_INSUFFICIENT instead of an exception.
+    """
+    import json as _json
+    from utils.gmail_diag import TokenError, parse_google_error
+    try:
+        token = _gmail_token()
+    except TokenError as e:
+        return "", e.reason
+    except Exception:
+        return "", "token_error"
+    meta = {"name": title, "mimeType": "application/vnd.google-apps.document"}
+    if folder_id:
+        meta["parents"] = [folder_id]
+    boundary = "----RecapDocBoundary"
+    body = (f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{_json.dumps(meta)}\r\n"
+            f"--{boundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n{html_body}\r\n--{boundary}--\r\n")
+    try:
+        resp = requests.post(_DRIVE_UPLOAD_URL, params={"uploadType": "multipart", "fields": "id,webViewLink"},
+                             headers={"Authorization": f"Bearer {token}",
+                                      "Content-Type": f"multipart/related; boundary={boundary}"},
+                             data=body.encode("utf-8"), timeout=60)
+    except Exception:
+        return "", "network_error"
+    if resp.status_code not in (200, 201):
+        try:
+            payload = resp.json()
+        except Exception:
+            payload = {}
+        return "", parse_google_error(resp.status_code, payload).reason
+    d = resp.json()
+    return d.get("webViewLink") or f"https://docs.google.com/document/d/{d.get('id')}/edit", ""

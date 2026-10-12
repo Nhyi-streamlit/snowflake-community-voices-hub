@@ -85,9 +85,12 @@ class SlackChannel:
         self._token = bot_token
 
     def send(self, address: str, subject: str, body: str) -> str:
+        return self.send_mrkdwn(address, slack_escape(f"*{subject}*\n{body}"))
+
+    def send_mrkdwn(self, address: str, text: str) -> str:
+        """Post text that is already Slack mrkdwn; the caller must escape any user-supplied values."""
         resp = _post("https://slack.com/api/chat.postMessage",
-                     json={"channel": address, "text": slack_escape(f"*{subject}*\n{body}"),
-                           "unfurl_links": False},
+                     json={"channel": address, "text": text, "unfurl_links": False},
                      headers={"Authorization": f"Bearer {self._token}"})
         if resp.status_code != 200:
             raise _http_error(resp)
@@ -115,3 +118,6 @@ class FakeChannel:
             raise DeliveryError("Timed out waiting for provider", retryable=False, uncertain=True)
         self.sent.append((address, subject, body))
         return f"fake-{len(self.sent)}"
+
+    def send_mrkdwn(self, address, text):
+        return self.send(address, "", text)

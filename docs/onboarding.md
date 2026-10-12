@@ -135,3 +135,54 @@ Use a private/incognito window and two email addresses you're allowed to use (A 
    the Admin Portal (Sheets mode) or Workflow admin.
 8. **Help:** Open `/help?topic=signin` and confirm it opens on Signing in. Every "Help" link in the portals opens
    the matching topic.
+
+## 6. Ops automation: recap, triage, content checks, daily digest
+
+All of this runs from **cron on Aba's Mac** (`scripts/run_ops_jobs.sh`, hourly) and hands off to the app through the
+Google Sheet. Tabs are created by `python setup_sheet.py`: Recaps, Triage, Triage_Rules, Digest, Content_Review.
+**Nothing reaches vendors, speakers, the team channel, or email lists without a click in Workflow admin.**
+
+| Job | What it does | Sends? |
+|---|---|---|
+| `weekly_recap.py --publish-draft --scheduled` | First run at or after Monday 08:00 ET: last Mon–Sun recap → Google Doc + Recaps row + "Recap ready" DM to Aba | DM to Aba only |
+| `triage_ai.py --write` | Scores Pending events and adds a one-line Cortex note (`llama3.3-70b`, override with `CV_TRIAGE_MODEL`) | No |
+| `content_jobs.py --reminders --ai-review` | Records 14/7/2-day reminders in the outbox; advisory brand review of new bios/abstracts | No (outbox sends only when `DELIVERY_ENABLED`) |
+| `daily_digest.py --write` | Rewrites the Digest tab read by the good-morning briefing | No |
+
+Every job defaults to a dry run without its write flag. Logs are in `logs/` (gitignored). The Mac's clock is
+Europe/London, so the recap checks the time in New York rather than relying on a cron hour. If the Mac is asleep,
+the recap is drafted on the first run after it wakes.
+
+**Workflow admin areas:** **Needs you** (triage queue, bulk decisions, vendor email drafts, editable rules),
+**Recaps** (preview, Approve & send to Slack or email, Discard), **Content checks** (needs the workflow store),
+and **Workflow** (the original queue).
+
+### Secrets to add (local `.streamlit/secrets.toml` and Community Cloud → Settings → Secrets)
+```toml
+APP_BASE_URL = "https://nhyi-streamlit-snowflake-community-voices--streamlit-app-an16ay.streamlit.app"
+
+[notify.slack]
+bot_token = "xoxb-…"            # Slack app with chat:write (and im:write for DMs)
+
+[recap]
+slack_user_id = "U…"            # Aba: the only DM recipient
+slack_channel = "C…"            # team channel used after approval
+email_list = ["…@snowflake.com"]
+drive_folder_id = ""            # optional: where recap Docs are created
+```
+The Slack bot must be invited to the recap channel. Don't commit these values.
+
+### Install the cron job (only after approval)
+```
+crontab -e
+5 * * * * /Users/amicah/.snowflake/cortex/playground/workspace/community-voices-hub/scripts/run_ops_jobs.sh
+```
+
+### Test script
+1. `python setup_sheet.py` (adds the new tabs; existing tabs keep their data).
+2. `python scripts/weekly_recap.py` and check `logs/recap-preview.txt`. Then `--publish-draft`: expect a Doc, a
+   Recaps row, and one DM to you. Run it again and expect no second DM.
+3. Workflow admin → Recaps → preview → **Approve & send to Slack** (a test channel first).
+4. Submit a test event in the Vendor Portal → Workflow admin → Needs you. It appears with a score. Apply a decision:
+   an email draft appears and nothing is sent until you tick Reviewed and click Send.
+5. `python scripts/triage_ai.py --write`, then reload: the AI note appears.

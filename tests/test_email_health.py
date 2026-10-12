@@ -156,6 +156,7 @@ def admin_page():
                                                           "reason": "", "detail": ""}
         email_health.OVERRIDE["last"] = lambda: last or {}
         at = AppTest.from_file("pages/6_Workflow_Admin.py", default_timeout=30)
+        at.query_params["tab"] = "workflow"
         at.run()
         assert not at.exception, at.exception
         return at, box
