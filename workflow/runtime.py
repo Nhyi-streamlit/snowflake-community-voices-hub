@@ -25,6 +25,12 @@ def get_actor() -> Actor | None:
         if password_unlocked("admin"):
             # Interim shared-password admin: recorded in the audit log as this fixed actor.
             return Actor("interim-password-admin", "", is_admin=True)
+        # External users (vendors) signed in with an emailed one-time code. Never admins.
+        from utils.email_otp import session_email
+        from utils.identity import email_identity
+        otp = email_identity(session_email())
+        if otp is not None:
+            return Actor(otp.subject, otp.email, False)
         return None
     return Actor(identity.subject, identity.email, is_admin(identity))
 

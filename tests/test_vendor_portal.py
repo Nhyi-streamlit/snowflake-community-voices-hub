@@ -6,12 +6,36 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from conftest import ABA, VND, VND2, make_service
+from utils import email_otp as otp
 from utils import vendor_backend as vb
 from utils import vendor_validation as vv
 from workflow import runtime
 
 PAGE = "pages/2_Vendor_Portal.py"
 START = date.today() + timedelta(days=60)
+
+
+class FakeOtp:
+    """OtpStore with a fake clock and an outbox that captures codes instead of emailing them."""
+
+    class _Clock:
+        t = 1_000_000.0
+
+        def __call__(self):
+            return self.t
+
+    def __init__(self):
+        self.clock = self._Clock()
+        self.box = type("Box", (), {"sent": []})()
+        self.store = otp.OtpStore(sender=self._send, clock=self.clock, key=b"k" * 32)
+
+    def _send(self, to, subject, body):
+        self.box.sent.append((to, subject, body))
+        return True
+
+    def code(self):
+        import re
+        return re.search(r">(\d{6})<", self.box.sent[-1][2]).group(1)
 
 
 class FakeSheets:
@@ -181,14 +205,85 @@ def test_workflow_mode_uses_propose_event(workflow):
 
 # ── page: sign-in gating ──────────────────────────────────────────────────────
 
-def test_signed_out_sees_landing_and_sign_in(sheets):
-    at = page(None, {"auth": {"client_id": "x"}})
-    assert any(b.label == "Sign in with Google" for b in at.button)
-    assert not at.error
-    assert any("Why do I need to sign in" in e.label for e in at.expander)
-    at = page(None)                                                     # [auth] not configured yet
+def test_signed_out_sees_landing_and_email_sign_in(sheets):
+    at = page(None)                                                     # no [auth]: email codes only
+    assert not at.error and not at.exception
+    assert at.text_input(key="otp_email_input") is not None
+    assert any(b.label == "Email me a code" for b in at.button)
     assert not any(b.label == "Sign in with Google" for b in at.button)
-    assert any("being set up" in i.value for i in at.info) and not at.error
+    assert any("Why do I need to sign in" in e.label for e in at.expander)
+    at = page(None, {"auth": {"client_id": "x"}})                       # Google offered as a secondary option
+    assert any(b.label == "Sign in with Google" for b in at.button)
+
+
+@pytest.fixture
+def otp_store():
+    fake = FakeOtp()
+    otp.OVERRIDE["store"] = fake.store
+    yield fake
+    otp.OVERRIDE.clear()
+
+
+def real_page():
+    """Run the page with the real get_actor (no actor override), as an anonymous visitor would."""
+    runtime.OVERRIDE.pop("actor", None)
+    at = AppTest.from_file(PAGE, default_timeout=30)
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def press(at, label):
+    next(b for b in at.button if b.label == label).click()
+    at.run()
+    assert not at.exception, at.exception
+    return at
+
+
+def test_email_code_sign_in_end_to_end(sheets, otp_store):
+    at = real_page()
+    at.text_input(key="otp_email_input").input("Vendor@EventCo.example")
+    press(at, "Email me a code")
+    assert otp_store.box.sent and otp_store.box.sent[0][0] == "vendor@eventco.example"
+    assert any("We sent a 6-digit code" in s.value for s in at.success)
+    at.text_input(key="otp_code_input").input("000000" if otp_store.code() != "000000" else "111111")
+    press(at, "Sign in")
+    assert any("4 attempt(s) left" in e.value for e in at.error)
+    at.text_input(key="otp_code_input").input(otp_store.code())
+    press(at, "Sign in")
+    assert "Signed in as vendor@eventco\\.example" in " ".join(c.value for c in at.caption)   # markdown-escaped
+    assert at.radio(key="vnd_view") is not None                         # portal is shown
+    assert not any("Mode:" in w.value for w in at.warning)              # OTP users are never admins
+    at.radio(key="vnd_view").set_value("Help")
+    at.run()
+    press(at, "Sign out")
+    assert any(b.label == "Email me a code" for b in at.button)
+
+
+def test_email_code_session_expires(sheets, otp_store):
+    at = real_page()
+    at.text_input(key="otp_email_input").input("vendor@eventco.example")
+    press(at, "Email me a code")
+    at.text_input(key="otp_code_input").input(otp_store.code())
+    press(at, "Sign in")
+    assert at.radio(key="vnd_view") is not None
+    otp_store.clock.t += otp.SESSION_TTL + 1
+    at.run()
+    assert any(b.label == "Email me a code" for b in at.button)         # back to the sign-in screen
+
+
+def test_email_code_users_get_only_their_events(sheets, otp_store):
+    vb.submit_event(VND2, draft(event_name="Someone else's event"), "t")
+    at = real_page()
+    at.text_input(key="otp_email_input").input(VND.email)
+    press(at, "Email me a code")
+    at.text_input(key="otp_code_input").input(otp_store.code())
+    press(at, "Sign in")
+    at.radio(key="vnd_view").set_value("My events")
+    at.run()
+    assert not at.exception
+    assert "Someone else" not in " ".join(m.value for m in at.markdown)
+    assert any("haven't registered any events" in i.value for i in at.info)
 
 
 def test_mode_banner_only_for_admins(sheets):

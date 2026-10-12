@@ -1,4 +1,5 @@
 import streamlit as st
+from utils.email_otp import session_email, sign_out as otp_sign_out
 from utils.identity import current_identity, is_admin, lock_password_session, password_unlocked
 
 # Public pages work for anyone with the link (homepage, speaker resources, audience feedback QR links).
@@ -25,8 +26,18 @@ def _secret(name, default=None):
 
 auth_configured = bool(_secret("auth"))
 identity = current_identity(st.user) if getattr(st.user, "is_logged_in", False) else None
+otp_email = session_email()
+workspace_page = st.Page("pages/5_Workspace.py", title="My event workspace", icon=":material/folder:",
+                         url_path="workspace")
 if not getattr(st.user, "is_logged_in", False):
-    if auth_configured and st.sidebar.button("Sign in with Google", icon=":material/login:"):
+    if otp_email:
+        # Vendor signed in with an emailed code (no Google account needed).
+        st.sidebar.caption(f"Signed in as {otp_email}")
+        if st.sidebar.button("Sign out", icon=":material/logout:", key="otp_sign_out"):
+            otp_sign_out()
+            st.rerun()
+        pages[""] += [workspace_page]
+    elif auth_configured and st.sidebar.button("Sign in with Google", icon=":material/login:"):
         st.login()
 elif identity is None:
     st.sidebar.error("Your Google account must have a verified email address.")
@@ -40,9 +51,7 @@ else:
         st.sidebar.code(identity.subject, language=None)
     if st.sidebar.button("Sign out", icon=":material/logout:"):
         st.logout()
-    pages[""] += [
-        st.Page("pages/5_Workspace.py", title="My event workspace", icon=":material/folder:", url_path="workspace"),
-    ]
+    pages[""] += [workspace_page]
 
 pages["Program team"] = [
     st.Page("pages/6_Workflow_Admin.py", title="Workflow admin", icon=":material/inbox:", url_path="workflow-admin"),

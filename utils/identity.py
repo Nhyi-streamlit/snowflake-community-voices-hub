@@ -20,8 +20,23 @@ def current_identity(user):
     return Identity(subject, email, issuer)
 
 
+EMAIL_OTP_ISSUER = "email-otp"
+
+
+def email_identity(email):
+    """Identity for an email verified by a one-time code. Never matches the admin allowlist,
+    which holds Google subjects only."""
+    import hashlib
+    email = (email or "").strip().lower()
+    if not email:
+        return None
+    return Identity("email:" + hashlib.sha256(email.encode()).hexdigest()[:32], email, EMAIL_OTP_ISSUER)
+
+
 def is_admin(identity):
     import streamlit as st
+    if identity is None or identity.issuer != "https://accounts.google.com":
+        return False
     try:
         allowed = st.secrets.get("ADMIN_GOOGLE_SUBJECTS", [])
     except Exception:

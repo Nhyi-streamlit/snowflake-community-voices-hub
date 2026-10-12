@@ -12,6 +12,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from utils import email_otp as otp
 from utils import vendor_backend as vb
 from utils import vendor_validation as vv
 from utils.styles import inject_css
@@ -45,9 +46,13 @@ FAQ = [
     ("I have lots of events. Is there a faster way?",
      "Use **Bulk upload**: download the template, fill one row per event, and upload the CSV or Excel file. "
      "We check every row before anything is submitted."),
-    ("Why do I need to sign in with Google?",
-     "Signing in verifies your email so only you can see and edit your events. Any Google account works, "
-     "including Gmail and Google Workspace accounts. We only receive your name and email."),
+    ("Why do I need to sign in?",
+     "Signing in verifies your email so only you can see and edit your events. Enter your email and we'll send "
+     "you a 6-digit code — any email address works, and there's no password or account to create. If you refresh "
+     "the page or open a new tab, just request a new code."),
+    ("I didn't get my code.",
+     "Codes arrive within a minute from the Community Voices mailbox. Check spam or promotions, then use "
+     "**Resend code**. Codes expire after 10 minutes."),
     ("Who do I contact for help?", "Email community@snowflake.com and include your reference ID if you have one."),
 ]
 
@@ -75,6 +80,51 @@ def faq():
             st.markdown(a)
 
 
+def otp_panel():
+    """Email one-time-code sign-in for vendors (no Google account needed)."""
+    ss = st.session_state
+    store = otp.get_store()
+    with st.container(border=True):
+        st.markdown("#### Sign in with your email")
+        if ss.get("otp_stage") != "code":
+            st.caption("We'll email you a 6-digit code. No password or account needed.")
+            with st.form("otp_email_form", border=False):
+                email = st.text_input("Email address", key="otp_email_input", placeholder="you@company.com")
+                send = st.form_submit_button("Email me a code", type="primary", width="stretch")
+            if send:
+                with st.spinner("Sending…"):
+                    r = store.request_code(email, otp.session_id())
+                if r.ok:
+                    ss.otp_email, ss.otp_stage, ss.otp_notice = otp.normalize(email), "code", r.message
+                    st.rerun()
+                st.error(r.message, icon=":material/error:")
+        else:
+            st.success(ss.get("otp_notice", "Code sent."), icon=":material/mark_email_read:")
+            with st.form("otp_code_form", border=False):
+                code = st.text_input("6-digit code", key="otp_code_input", max_chars=7, placeholder="123456")
+                verify = st.form_submit_button("Sign in", type="primary", width="stretch")
+            if verify:
+                r = store.verify_code(ss.otp_email, code)
+                if r.ok:
+                    otp.start_session(ss.otp_email)
+                    for k in ("otp_stage", "otp_notice"):
+                        ss.pop(k, None)
+                    st.rerun()
+                st.error(r.message, icon=":material/error:")
+            c1, c2 = st.columns(2)
+            if c1.button("Resend code", key="otp_resend", width="stretch"):
+                r = store.request_code(ss.otp_email, otp.session_id())
+                ss.otp_notice = r.message
+                if not r.ok:
+                    st.error(r.message, icon=":material/error:")
+                else:
+                    st.rerun()
+            if c2.button("Use a different email", key="otp_change", width="stretch"):
+                for k in ("otp_stage", "otp_email", "otp_notice"):
+                    ss.pop(k, None)
+                st.rerun()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SIGNED OUT: public landing page
 # ══════════════════════════════════════════════════════════════════════════════
@@ -87,7 +137,7 @@ if actor is None or not actor.email:
          "community speakers can be matched to it.")
     if logged_in and actor is None:
         st.warning("Your Google account doesn't have a verified email address, so we can't link events to it. "
-                   "Sign out and use a Google account with a verified email.", icon=":material/mark_email_unread:")
+                   "Sign out, then sign in with your email instead.", icon=":material/mark_email_unread:")
         if st.button("Sign out", icon=":material/logout:"):
             st.logout()
     elif actor is not None and not actor.email:
@@ -97,7 +147,7 @@ if actor is None or not actor.email:
     with c1:
         with st.container(border=True):
             st.markdown("**1. Sign in**")
-            st.caption("Use any Google account — Gmail works.")
+            st.caption("Enter your email and we'll send you a code.")
     with c2:
         with st.container(border=True):
             st.markdown("**2. Register your event**")
@@ -107,13 +157,11 @@ if actor is None or not actor.email:
             st.markdown("**3. Get matched**")
             st.caption("We review within 5 business days and connect you with a speaker.")
     if not logged_in:
+        otp_panel()
         if _secret("auth"):
-            if st.button("Sign in with Google", type="primary", icon=":material/login:", width="stretch",
-                         key="vnd_login"):
+            st.caption("Have a Google account set up for this program?")
+            if st.button("Sign in with Google", icon=":material/login:", key="vnd_login"):
                 st.login()
-        else:
-            st.info("Sign-in is being set up. In the meantime, email community@snowflake.com to register your event.",
-                    icon=":material/construction:")
     st.subheader("Questions")
     faq()
     st.stop()
@@ -436,4 +484,8 @@ else:
                 "4. Have many events? Use **Bulk upload** with the template.")
     faq()
     if st.button("Sign out", icon=":material/logout:", key="vnd_logout"):
-        st.logout()
+        if logged_in:
+            st.logout()
+        else:
+            otp.sign_out()
+            st.rerun()
