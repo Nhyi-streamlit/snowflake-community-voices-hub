@@ -1,77 +1,127 @@
+"""Speaker Portal: get started, find events, resources, travel & expenses, and after-talk tools.
+
+Public: everything except personal submissions. Personal sections (reimbursement, headcount) use the
+same email-code sign-in as the Vendor Portal (or Google). The audience feedback link
+(?speaker=&event=&talk=) opens the rating form directly, with no sign-in.
+"""
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from datetime import datetime, date
+from contextlib import contextmanager
+from datetime import datetime, date, timezone
 from io import BytesIO
 import urllib.parse
 import streamlit as st
 import pandas as pd
 import requests as _requests
+from utils import public_events
+from utils import ui_components as ui
 from utils.styles import inject_css
-from utils.sections import SectionDone, section
+from utils.sections import SectionDone
 from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code
 from utils.confirmation import generate_confirmation_id
-from utils.identity import current_identity
+from workflow.runtime import get_actor
+from workflow.ui import md
 
-# Public page: resources, upcoming events, and audience feedback need no sign-in.
-# Sections that write personal data are paused; speaker uploads live in My event workspace.
-speaker_identity = current_identity(st.user)
-
-st.set_page_config(
-    page_title="Speaker Portal — Community Voices",
-    page_icon="🎤",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="Speaker Portal — Community Voices", page_icon="🎤", layout="wide")
 inject_css()
 
-# ── Detect URL params to auto-select right tab ─────────────────────────────────
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+# Verified speaker (email code or Google), or None. Anything personal requires it.
+speaker_identity = get_actor()
+if speaker_identity is not None and not speaker_identity.email:
+    speaker_identity = None          # password-only admin session: no personal identity
+
 params = st.query_params
 _speaker_param = params.get("speaker", "")
 _event_param   = params.get("event", "")
 _talk_param    = params.get("talk", "")
-
-# If audience feedback params present → show feedback tab by default
 _audience_mode = bool(_speaker_param and _event_param and _talk_param)
 
 SLOTS_SHEET_ID = "1IgTYK8vV-AhDI3HuYB3KEjN8knRjY66LAOIWF0QT5II"
 
-st.markdown("""
-<div class="page-hero">
-  <div class="eyebrow">Speaker Portal</div>
-  <h1>Your Community Voices hub</h1>
-  <p>
-    Browse available speaking slots, book your travel, explore upcoming events,
-    access speaker resources, and generate talk feedback QR codes — all in one place.
-  </p>
-</div>
-""", unsafe_allow_html=True)
+SECTIONS = {
+    "start": ":material/waving_hand: Get started",
+    "speak": ":material/event: Speak at an event",
+    "resources": ":material/inventory_2: Resources",
+    "travel": ":material/flight: Travel & expenses",
+    "after": ":material/star: After your talk",
+}
 
-# ── Tab order — put Feedback first if audience QR mode ─────────────────────────
+
+def _sync_section():
+    st.query_params["section"] = st.session_state["spk_section"]
+
+
 if _audience_mode:
-    TAB_NAMES = ["⭐ Talk Feedback", "🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources", "📸 Event Headcount"]
+    active = "feedback"              # audience QR link: only the rating form
 else:
-    TAB_NAMES = ["🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources", "⭐ Talk Feedback", "📸 Event Headcount"]
+    if "spk_section" not in st.session_state:
+        q = params.get("section", "start")
+        st.session_state["spk_section"] = q if q in SECTIONS else "start"
+    ui.hero("Speaker Portal", "Your Community Voices home",
+            "Find an event, get your talk ready, and hear what your audience thought — all in one place.",
+            theme="sky")
+    # Horizontal radio (as in the Vendor Portal): testable with AppTest and always has a selection.
+    active = st.radio("Section", list(SECTIONS), format_func=SECTIONS.get, key="spk_section", horizontal=True,
+                      on_change=_sync_section, label_visibility="collapsed")
 
-tabs = st.tabs(TAB_NAMES)
 
-# Map names to tab objects
-tab_map        = dict(zip(TAB_NAMES, tabs))
-tab_browse     = tab_map.get("🎤 Available Speaking Slots")
-tab_travel     = tab_map.get("✈️ Book Your Travel")
-tab_uber       = tab_map.get("🚗 Uber Request")
-tab_reimburse  = tab_map.get("💰 Reimbursement")
-tab_upcoming   = tab_map.get("📅 Upcoming Events")
-tab_resources  = tab_map.get("📦 Resources")
-tab_feedback   = tab_map.get("⭐ Talk Feedback")
-tab_headcount  = tab_map.get("📸 Event Headcount")
+@contextmanager
+def show(*names):
+    """Section block. Its first statement is gate(...), which exits the block unless the section is active;
+    SectionDone anywhere inside ends just this block (st.stop() would blank the rest of the page)."""
+    try:
+        yield
+    except SectionDone:
+        pass
+
+
+def gate(*names):
+    if active not in names:
+        raise SectionDone
+
+
+def require_sign_in(what: str):
+    """Show the email-code sign-in and stop this section if the visitor isn't signed in."""
+    if speaker_identity is None:
+        st.info(f"Sign in to {what}. We'll email you a 6-digit code — no account needed.",
+                icon=":material/lock:")
+        ui.otp_sign_in(prefix="spk_otp")
+        raise SectionDone
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GET STARTED
+# ══════════════════════════════════════════════════════════════════════════════
+with show("start"):
+    gate("start")
+    st.subheader("How it works")
+    ui.step_cards([("Pick an event", "See approved events looking for community speakers under **Speak at an event**."),
+                   ("Get ready", "Use the brand kit, talk templates, and prep checklist under **Resources**."),
+                   ("Speak & share", "Show your feedback QR code, then log attendance under **After your talk**.")])
+    with st.container(border=True):
+        st.markdown("#### :material/lightbulb: New here?")
+        st.markdown("Community Voices supports Snowflake Data Superheroes, Squad members, Streamlit Creators, and "
+                    "practitioners with a real story to tell. Browsing and resources are open to everyone — you "
+                    "only sign in (with an emailed code) for things tied to you, like reimbursements.")
+        ui.help_link("speakers", "Read the speaker guide")
+        ui.help_link("travel", "How travel and reimbursement work")
+    if speaker_identity is not None:
+        st.caption(f"Signed in as {md(speaker_identity.email)}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: AVAILABLE SPEAKING SLOTS
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_browse):
-    st.warning("The legacy speaking-slot signup is paused until each signup can be tied to a verified event and owner. Contact the program team to express interest.")
-    raise SectionDone
+with show("speak"):
+    gate("speak")
+    ui.coming_soon("Signing up for a speaking slot",
+                   "Soon you'll be able to raise your hand for an event right here.")
+    raise SectionDone       # legacy slot signup below is kept but paused
     st.markdown("### Available speaking slots")
     st.markdown("Events confirmed and actively seeking Snowflake community speakers. Sign up directly below.")
 
@@ -175,7 +225,7 @@ with section(tab_browse):
         display_df["Interest Received From"] = display_df["Interest Received From"].replace("", "—")
         st.dataframe(
             display_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -205,11 +255,11 @@ with section(tab_browse):
                         with c_n: n = st.text_input("Your name", key=f"sp_n_{sheet_row}")
                         with c_e: st.text_input("Verified email", value=speaker_identity.email, disabled=True, key=f"sp_e_{sheet_row}")
                         e = speaker_identity.email
-                        sub = st.form_submit_button("Submit interest", type="primary", use_container_width=True)
+                        sub = st.form_submit_button("Submit interest", type="primary", width="stretch")
                     if sub and n and e:
                         write_signup_to_slots(sheet_row, n, e)
                         conf_id = generate_confirmation_id()
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        now = _now()
                         parts = n.split()
                         append_row("Speaker_Applications", [
                             conf_id, now, "Pending",
@@ -230,78 +280,38 @@ with section(tab_browse):
                 else:
                     st.button("I'm interested in this slot", key=f"sp_btn_{sheet_row}",
                               on_click=lambda k=key_open: st.session_state.update({k:True}),
-                              type="primary", use_container_width=True)
+                              type="primary", width="stretch")
     else:
         st.info("No open slots found. Check back soon.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: UPCOMING EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_upcoming):
+with show("speak"):
+    gate("speak")
     st.markdown("### Upcoming events")
-    st.markdown("All events in the Community Voices programme scheduled from today onwards.")
-
-    @st.cache_data(ttl=300)
-    def load_all_events():
-        try:
-            events = read_tab("Events")
-            if events.empty or "status" not in events:
-                return pd.DataFrame()
-            safe_cols = [col for col in ["event_name", "event_city", "event_country", "event_start", "event_end", "event_format"] if col in events]
-            return events.loc[events["status"].eq("Approved"), safe_cols].copy()
-        except Exception:
-            return pd.DataFrame()
-
-    if st.button("Refresh events", key="refresh_upcoming"):
-        st.cache_data.clear(); st.rerun()
-
-    df_all = load_all_events()
-
-    def _parse_event_date(d):
-        from datetime import datetime as _dt
-        d = str(d).strip()
-        for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d", "%b %d, %Y", "%B %d, %Y", "%b %d %Y"):
-            try:
-                x = _dt.strptime(d, fmt)
-                if x.year < 2000: x = x.replace(year=2026)
-                return x
-            except Exception:
-                pass
-        return None
-
-    if df_all.empty:
-        st.info("No events found. Check back soon.")
+    st.caption("Approved Community Voices events from today onwards.")
+    upcoming_df = public_events.upcoming()
+    if upcoming_df is None:
+        st.info("We couldn't load events right now. Please try again in a few minutes.", icon=":material/cloud_off:")
+    elif upcoming_df.empty:
+        st.info("No upcoming events yet — check back soon.", icon=":material/event_upcoming:")
     else:
-        today = datetime.today()
-        # Try common column names for start date
-        date_col = next((c for c in df_all.columns if "start" in c.lower() or "date" in c.lower()), None)
-        if date_col:
-            df_all["_parsed_date"] = df_all[date_col].apply(_parse_event_date)
-            upcoming_df = df_all[df_all["_parsed_date"].apply(lambda x: x is not None and x >= today)].copy()
-            upcoming_df = upcoming_df.sort_values("_parsed_date").reset_index(drop=True)
-        else:
-            upcoming_df = df_all.copy()
-
-        if upcoming_df.empty:
-            st.info("No upcoming events scheduled yet. Check back soon.")
-        else:
-            # Build a clean display table from whatever columns exist
-            display_cols = [c for c in ["event_name","event_city","event_country","event_date_start","event_date_end","event_type","expected_audience"] if c in upcoming_df.columns]
-            if display_cols:
-                display_up = upcoming_df[display_cols].copy()
-                display_up.columns = [c.replace("event_","").replace("_"," ").title() for c in display_cols]
-                st.dataframe(display_up, use_container_width=True, hide_index=True)
-            else:
-                st.dataframe(upcoming_df.drop(columns=["_parsed_date"], errors="ignore"), use_container_width=True, hide_index=True)
-
-            st.caption(f"{len(upcoming_df)} upcoming event(s)")
+        view = upcoming_df.rename(columns={"event_name": "Event", "event_city": "City", "event_country": "Country",
+                                           "start": "Starts", "event_format": "Format"})
+        st.dataframe(view[[c for c in ["Starts", "Event", "City", "Country", "Format"] if c in view]],
+                     hide_index=True, width="stretch",
+                     column_config={"Starts": st.column_config.DateColumn(format="MMM D, YYYY")})
+        st.caption(f"{len(upcoming_df)} upcoming event(s)")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_resources):
-    st.markdown("### Speaker resource hub")
-    r_brand, r_talk, r_prep, r_faq = st.tabs(["Brand Kit","Talk Templates","Speaker Prep","FAQ"])
+with show("resources"):
+    gate("resources")
+    st.markdown("### Speaker resources")
+    r_brand, r_talk, r_prep = st.tabs([":material/palette: Brand Kit", ":material/slideshow: Talk Templates",
+                                       ":material/checklist: Speaker Prep"])
 
     with r_brand:
         st.markdown("#### Snowflake Brand Assets")
@@ -342,66 +352,51 @@ with section(tab_resources):
 
     with r_prep:
         for phase, items in [
-            ("6–8 weeks before",["Submit interest from the Browse Events tab","Confirm session length and A/V with organizers"]),
-            ("3–4 weeks before",["Draft slides using Snowflake template","Full rehearsal end-to-end","Submit bio and headshot","Generate feedback QR code (Talk Feedback tab)"]),
+            ("6–8 weeks before",["Find an event under Speak at an event","Confirm session length and A/V with organizers"]),
+            ("3–4 weeks before",["Draft slides using Snowflake template","Full rehearsal end-to-end","Submit bio and headshot","Generate your feedback QR code (After your talk)"]),
             ("Day of",["Arrive 30 min early — test A/V and clicker","QR code on last slide","Stay for Q&A"]),
-            ("After",["Share slides publicly","Post on social — tag @Snowflake + #SnowflakeCommunity","Review feedback scores from Talk Feedback tab"]),
+            ("After",["Share slides publicly","Post on social — tag @Snowflake + #SnowflakeCommunity","Log attendance under After your talk"]),
         ]:
             with st.expander(phase):
                 for item in items: st.markdown(f"☐ {item}")
 
-    with r_faq:
-        for q, a in [
-            ("How do I sign up to speak?","Browse open slots on the Browse Events tab and click 'I'm interested in this slot'."),
-            ("What support can I receive?","Travel booking via Navan (flights and hotel), an Uber gift card for local transport, and co-promotion on Snowflake social channels."),
-            ("How do I book my travel?","Use the Book Your Travel tab and fill in the booking request form. Navan will arrange flights and hotel within 2 business days. You'll also receive an Uber code for local transport."),
-            ("Can I sign up for multiple events?","Yes — submit a separate sign-up for each event."),
-            ("Do I need approval for slide content?","No pre-approval needed, but follow brand guidelines and don't discuss roadmap or pricing."),
-            ("How do I get reimbursed for out-of-pocket expenses?","Use the Reimbursement tab to submit your expenses. You'll receive a confirmation ID. Email your receipts to aba.micah@snowflake.com with your confirmation ID as the subject. Reimbursements are processed within 10 business days."),
-        ]:
-            with st.expander(q): st.markdown(a)
+    ui.help_link("speakers", "More questions? See the speaker FAQ")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: TALK FEEDBACK
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_feedback):
+with show("feedback", "after"):
+    gate("feedback", "after")
     if _audience_mode:
         # ── Audience rating mode ──────────────────────────────────────────────
-        from html import escape
-        safe_speaker = escape(_speaker_param)
-        safe_event = escape(_event_param)
-        safe_talk = escape(_talk_param)
-        st.markdown(f"""
-        <div class="page-hero" style="background:linear-gradient(135deg,#0E2346,#1B3A6B);">
-          <div class="eyebrow">Rate this Talk</div>
-          <h1>{safe_talk}</h1>
-          <p><strong style="color:#fff;">{safe_speaker}</strong> · {safe_event}</p>
-        </div>""", unsafe_allow_html=True)
+        ui.hero("Rate this Talk", _talk_param, f"{_speaker_param} · {_event_param}")   # hero() escapes
 
         if st.session_state.get("sp_fb_done"):
-            st.markdown('<div class="success-box"><h2>Thank you!</h2><p>Your feedback helps our community speakers grow.</p></div>', unsafe_allow_html=True)
+            st.success("**Thank you!** Your feedback helps our community speakers grow.", icon=":material/favorite:")
         else:
             r_overall  = st.slider("Overall rating", 1, 5, 4, format="%d ⭐", key="fb_overall")
             r_content  = st.slider("Content quality", 1, 5, 4, format="%d ⭐", key="fb_content")
             r_delivery = st.slider("Delivery", 1, 5, 4, format="%d ⭐", key="fb_delivery")
             r_relevance= st.slider("Relevance to your work", 1, 5, 4, format="%d ⭐", key="fb_relevance")
-            st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+            st.divider()
             valuable   = st.text_area("Most valuable takeaway?", height=80, key="fb_valuable")
             would_attend = st.radio("Would you attend another talk by this speaker?",["Definitely yes","Probably yes","Not sure","Probably not"], horizontal=True, key="fb_attend")
             c1f,c2f=st.columns(2)
             with c1f: resp_name=st.text_input("Your name (optional)", key="fb_resp_name")
             with c2f: resp_email=st.text_input("Your email (optional)", key="fb_resp_email")
-            if st.button("Submit Feedback", type="primary", use_container_width=True, key="fb_submit"):
+            if st.button("Submit Feedback", type="primary", width="stretch", key="fb_submit"):
                 import uuid
-                row=[str(uuid.uuid4())[:8].upper(),datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                row=[str(uuid.uuid4())[:8].upper(),_now(),
                      _speaker_param,_event_param,_talk_param,"",
                      str(r_overall),str(r_content),str(r_delivery),str(r_relevance),
                      valuable or "",would_attend,"","",resp_name or "",resp_email or "",""]
-                append_row("Talk_Feedback",row)
-                st.session_state["sp_fb_done"]=True; st.rerun()
+                if append_row("Talk_Feedback",row):
+                    st.session_state["sp_fb_done"]=True; st.rerun()
+                else:
+                    st.error("We couldn't save your rating just now. Please try again in a moment.")
     else:
         # ── Speaker: generate QR code ─────────────────────────────────────────
-        st.markdown("### Generate your talk feedback QR code")
+        st.markdown("### :material/qr_code_2: Talk feedback QR code")
         st.markdown("After your talk, display this QR code so the audience can rate you in 30 seconds.")
         spk_name = st.text_input("Your full name *", key="qr_name")
         spk_event= st.text_input("Event name *", key="qr_event")
@@ -423,26 +418,30 @@ with section(tab_feedback):
                 buf=BytesIO(); img.save(buf,format="PNG"); buf.seek(0)
                 ci1,ci2=st.columns([1,1])
                 with ci1:
-                    st.image(buf,use_container_width=True)
+                    st.image(buf,width="stretch")
                     st.download_button("Download QR PNG",data=buf.getvalue(),
                         file_name=f"feedback-{spk_name.replace(' ','-').lower()}.png",
-                        mime="image/png",use_container_width=True)
+                        mime="image/png",width="stretch")
                 with ci2:
-                    st.markdown(f"""
-                    <div class="info-card"><h4>Shareable link</h4>
-                    <p style="word-break:break-all;font-size:0.82rem;font-family:monospace;">{fb_url}</p></div>
-                    <div class="info-card"><h4>How to use</h4>
-                    <p>1. Download the QR PNG<br>2. Add to your last slide<br>
-                    3. Or paste link in event chat<br>4. Audience scans → 30-sec rating form</p></div>""", unsafe_allow_html=True)
+                    with st.container(border=True):
+                        st.markdown("**Shareable link**")
+                        st.code(fb_url, language=None, wrap_lines=True)
+                    with st.container(border=True):
+                        st.markdown("**How to use**")
+                        st.markdown("1. Download the QR PNG\n2. Add it to your last slide\n"
+                                    "3. Or paste the link in the event chat\n4. Audience scans → 30-second rating form")
             except ImportError:
                 st.error("Run: pip install qrcode[pil] Pillow")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: BOOK YOUR TRAVEL
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_travel):
-    st.warning("Travel booking and reimbursement are paused until verified event assignments and private storage are configured. Contact the program team for urgent requests.")
-    raise SectionDone
+with show("travel"):
+    gate("travel")
+    ui.coming_soon("Travel booking and Uber codes",
+                   "Booking flights, hotels, and local rides through the portal will be back soon.")
+    ui.help_link("travel", "How travel support works")
+    raise SectionDone       # legacy booking form below is kept but paused
 
     st.markdown("### Book your travel")
     st.markdown(
@@ -640,14 +639,14 @@ with section(tab_travel):
         st.caption("Complete all required fields (*) to submit.")
 
     tv_submit_clicked = st.button("Submit Travel Request", type="primary",
-                                   use_container_width=True, key="tv_submit")
+                                   width="stretch", key="tv_submit")
 
     if tv_submit_clicked and not required_ok:
         st.error("Please click into another field to confirm your last entry, then complete all required fields (*).", icon="⚠️")
 
     if tv_submit_clicked and required_ok:
         import uuid
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = _now()
         uber_code = claim_uber_code(tv_email.strip(), "Travel")
         row = [
             str(uuid.uuid4())[:8].upper(), now,
@@ -676,9 +675,9 @@ with section(tab_travel):
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: UBER REQUEST
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_uber):
-    st.warning("Uber requests are paused until verified event assignments are configured.")
-    raise SectionDone
+with show("travel"):
+    gate("travel")
+    raise SectionDone       # paused; covered by the coming-soon card above
     st.markdown("### Request an Uber gift card")
     st.markdown(
         "Approved speakers can request an Uber gift card for local transport to and from the event venue."
@@ -740,14 +739,14 @@ with section(tab_uber):
         st.caption("Complete all required fields (*) to submit.")
 
     ub_submit_clicked = st.button("Submit Uber Request", type="primary",
-                                   use_container_width=True, key="ub_submit")
+                                   width="stretch", key="ub_submit")
 
     if ub_submit_clicked and not ub_required:
         st.error("Please click into another field to confirm your last entry, then complete all required fields (*).", icon="⚠️")
 
     if ub_submit_clicked and ub_required:
         import uuid
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = _now()
         uber_code = claim_uber_code(ub_email.strip(), "Uber")
         row = [
             str(uuid.uuid4())[:8].upper(), now,
@@ -765,10 +764,12 @@ with section(tab_uber):
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: REIMBURSEMENT
 # ══════════════════════════════════════════════════════════════════════════════
-with section(tab_reimburse):
+with show("travel"):
+    gate("travel")
+    st.divider()
     if speaker_identity is None:
-        st.info("Sign in with Google (sidebar) to submit a reimbursement.")
-        raise SectionDone
+        st.markdown("### Expense reimbursement")
+    require_sign_in("submit a reimbursement")
     import uuid as _uuid
 
     st.markdown("### Expense reimbursement")
@@ -911,7 +912,7 @@ with section(tab_reimburse):
         )
 
         submitted = st.form_submit_button(
-            "Submit Reimbursement Request", type="primary", use_container_width=True
+            "Submit Reimbursement Request", type="primary", width="stretch"
         )
 
     # ── Handle submission (outside form — values are now fully committed) ──────
@@ -948,7 +949,7 @@ with section(tab_reimburse):
             st.error("Please fix: " + "; ".join(missing) + ".", icon="⚠️")
         else:
             reimb_id = "REIMB-2026-" + _uuid.uuid4().hex[:8].upper()
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            now = _now()
             expenses_summary = "\n".join(expense_lines)
             total_str = f"${total_usd:,.2f} USD"
 
@@ -1001,18 +1002,19 @@ with section(tab_reimburse):
             ]
 
             if append_row("Reimbursements", sheet_row):
+                from html import escape as _e      # every speaker-typed value below is escaped
                 expense_rows_html = "".join(
-                    f"<tr><td style='padding:6px 8px;border:1px solid #E2E8F0;'>{line}</td></tr>"
+                    f"<tr><td style='padding:6px 8px;border:1px solid #E2E8F0;'>{_e(str(line))}</td></tr>"
                     for line in expense_lines
                 )
-                payment_detail = (
+                payment_detail = _e(
                     f"PayPal: {paypal_val}" if rf_pay_method == "PayPal"
                     else f"Bank transfer — {bank_name_val} / {bank_account_val} / {bank_routing_val}"
                 )
 
                 drive_links_html = ""
                 if drive_links:
-                    links_list = "".join(f'<li><a href="{lnk}">{lnk}</a></li>' for lnk in drive_links)
+                    links_list = "".join(f'<li><a href="{_e(lnk)}">{_e(lnk)}</a></li>' for lnk in drive_links)
                     drive_links_html = f"<h4 style='color:#0E2346;margin-top:16px;'>Receipt files (Google Drive)</h4><ul>{links_list}</ul>"
 
                 receipt_note = (
@@ -1028,9 +1030,9 @@ with section(tab_reimburse):
                     <h2 style="color:#0E2346;">New Expense Reimbursement Request</h2>
                     <table style="border-collapse:collapse;width:100%;margin:12px 0;">
                     <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;width:30%;">Confirmation ID</td><td style="padding:8px;border:1px solid #E2E8F0;font-family:monospace;font-weight:700;">{reimb_id}</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Speaker</td><td style="padding:8px;border:1px solid #E2E8F0;">{rf_name.strip()} ({rf_email.strip()})</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event</td><td style="padding:8px;border:1px solid #E2E8F0;">{rf_event} — {rf_city} ({rf_date})</td></tr>
-                    <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Total (USD)</td><td style="padding:8px;border:1px solid #E2E8F0;font-weight:700;">{total_str}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Speaker</td><td style="padding:8px;border:1px solid #E2E8F0;">{_e(rf_name.strip())} ({_e(rf_email.strip())})</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Event</td><td style="padding:8px;border:1px solid #E2E8F0;">{_e(str(rf_event))} — {_e(str(rf_city))} ({_e(str(rf_date))})</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Total (USD)</td><td style="padding:8px;border:1px solid #E2E8F0;font-weight:700;">{_e(str(total_str))}</td></tr>
                     <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Payment</td><td style="padding:8px;border:1px solid #E2E8F0;">{payment_detail}</td></tr>
                     <tr><td style="padding:8px;border:1px solid #E2E8F0;font-weight:600;background:#F7FAFC;">Receipts</td><td style="padding:8px;border:1px solid #E2E8F0;">{receipt_note}</td></tr>
                     </table>
@@ -1039,7 +1041,7 @@ with section(tab_reimburse):
                     {expense_rows_html}
                     </table>
                     {drive_links_html}
-                    {f'<p><strong>Notes:</strong> {rf_notes}</p>' if rf_notes else ''}
+                    {f'<p><strong>Notes:</strong> {_e(rf_notes)}</p>' if rf_notes else ''}
                     <p style="color:#718096;font-size:0.85rem;margin-top:16px;">
                         This is an automated notification from the Community Voices platform.
                     </p>
@@ -1079,17 +1081,17 @@ def _hc_preview(data: bytes, boxes: list) -> bytes:
     return out.getvalue()
 
 
-with section(tab_headcount):
+with show("after"):
+    gate("after")
     from utils import person_detector
 
-    st.markdown("### 📸 Event Headcount")
+    st.divider()
+    st.markdown("### :material/groups: Event headcount")
     st.caption(
         "Upload photos from your event and we'll count the people in each one. Photos are analyzed "
         "inside this app and are not stored — only the counts are saved. Wide room shots work best."
     )
-    if speaker_identity is None:
-        st.info("Sign in with Google (sidebar) to count attendance from your event photos.")
-        raise SectionDone
+    require_sign_in("count attendance from your event photos")
 
     if st.session_state.get("hc_done"):
         st.success(f"Attendance saved: **{st.session_state['hc_done']}** people. Thank you!")
@@ -1160,7 +1162,7 @@ with section(tab_headcount):
                 st.error("Please enter the event name above.")
                 raise SectionDone
             row = [
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                _now(),
                 speaker_identity.email,
                 hc_event.strip(),
                 hc_date.isoformat() if hc_date else "",

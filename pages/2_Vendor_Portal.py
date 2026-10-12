@@ -15,6 +15,7 @@ import streamlit as st
 from utils import email_otp as otp
 from utils import vendor_backend as vb
 from utils import vendor_validation as vv
+from utils import ui_components as ui
 from utils.styles import inject_css
 from workflow.runtime import form_token, get_actor, rotate_token
 from workflow.ui import md
@@ -24,9 +25,6 @@ inject_css()
 
 STEPS = ["About you", "Event", "Speaker request", "Review & submit"]
 VIEWS = ["Register an event", "Bulk upload", "My events", "Help"]
-BADGE = {"Pending": ("orange", ":material/hourglass_top:"), "Approved": ("green", ":material/check_circle:"),
-         "Waitlisted": ("blue", ":material/schedule:"), "Not a Fit": ("red", ":material/cancel:"),
-         "Not a fit": ("red", ":material/cancel:"), "Closed": ("gray", ":material/event_busy:")}
 LABEL = {k: v[0] + (" *" if k in vv.REQUIRED else "") for k, v in vv.FIELDS.items()}
 HELP = {
     "event_website": "Full link, e.g. https://yourevent.com",
@@ -34,29 +32,6 @@ HELP = {
     "cfp_deadline": "Must be on or before the event start date",
     "speaker_topic": "What should a Snowflake community speaker talk about? Include audience level if you can.",
 }
-FAQ = [
-    ("Who can register an event?",
-     "Conference organizers, meetup hosts, universities, and partners running events where a Snowflake "
-     "community speaker (Data Superhero, Streamlit Creator, or community member) would be a good fit."),
-    ("What happens after I submit?",
-     "You get a reference ID right away. The Community Voices team reviews every event within 5 business days. "
-     "Approved events are listed for qualified community speakers, and you'll hear from us when a speaker is matched."),
-    ("Can I change my submission?",
-     "Yes — while it's Pending, open **My events** and choose **Edit**. Once reviewed, email us with your reference ID."),
-    ("I have lots of events. Is there a faster way?",
-     "Use **Bulk upload**: download the template, fill one row per event, and upload the CSV or Excel file. "
-     "We check every row before anything is submitted."),
-    ("Why do I need to sign in?",
-     "Signing in verifies your email so only you can see and edit your events. Enter your email and we'll send "
-     "you a 6-digit code — any email address works, and there's no password or account to create. If you refresh "
-     "the page or open a new tab, just request a new code."),
-    ("I didn't get my code.",
-     "Codes arrive within a minute from the Community Voices mailbox. Check spam or promotions, then use "
-     "**Resend code**. Codes expire after 10 minutes."),
-    ("Who do I contact for help?", "Email community@snowflake.com and include your reference ID if you have one."),
-]
-
-
 def _secret(name, default=None):
     try:
         return st.secrets.get(name, default)
@@ -65,64 +40,7 @@ def _secret(name, default=None):
 
 
 def hero(title, body):
-    # Static copy only; no user data is rendered as HTML on this page.
-    st.markdown(f"""
-<div class="page-hero" style="background:linear-gradient(135deg,#44337A 0%,#6B46C1 100%);">
-  <div class="eyebrow">Vendor &amp; Event Organizer Portal</div>
-  <h1>{title}</h1>
-  <p>{body}</p>
-</div>""", unsafe_allow_html=True)
-
-
-def faq():
-    for q, a in FAQ:
-        with st.expander(q):
-            st.markdown(a)
-
-
-def otp_panel():
-    """Email one-time-code sign-in for vendors (no Google account needed)."""
-    ss = st.session_state
-    store = otp.get_store()
-    with st.container(border=True):
-        st.markdown("#### Sign in with your email")
-        if ss.get("otp_stage") != "code":
-            st.caption("We'll email you a 6-digit code. No password or account needed.")
-            with st.form("otp_email_form", border=False):
-                email = st.text_input("Email address", key="otp_email_input", placeholder="you@company.com")
-                send = st.form_submit_button("Email me a code", type="primary", width="stretch")
-            if send:
-                with st.spinner("Sending…"):
-                    r = store.request_code(email, otp.session_id())
-                if r.ok:
-                    ss.otp_email, ss.otp_stage, ss.otp_notice = otp.normalize(email), "code", r.message
-                    st.rerun()
-                st.error(r.message, icon=":material/error:")
-        else:
-            st.success(ss.get("otp_notice", "Code sent."), icon=":material/mark_email_read:")
-            with st.form("otp_code_form", border=False):
-                code = st.text_input("6-digit code", key="otp_code_input", max_chars=7, placeholder="123456")
-                verify = st.form_submit_button("Sign in", type="primary", width="stretch")
-            if verify:
-                r = store.verify_code(ss.otp_email, code)
-                if r.ok:
-                    otp.start_session(ss.otp_email)
-                    for k in ("otp_stage", "otp_notice"):
-                        ss.pop(k, None)
-                    st.rerun()
-                st.error(r.message, icon=":material/error:")
-            c1, c2 = st.columns(2)
-            if c1.button("Resend code", key="otp_resend", width="stretch"):
-                r = store.request_code(ss.otp_email, otp.session_id())
-                ss.otp_notice = r.message
-                if not r.ok:
-                    st.error(r.message, icon=":material/error:")
-                else:
-                    st.rerun()
-            if c2.button("Use a different email", key="otp_change", width="stretch"):
-                for k in ("otp_stage", "otp_email", "otp_notice"):
-                    ss.pop(k, None)
-                st.rerun()
+    ui.hero("Vendor & Event Organizer Portal", title, body, theme="purple")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -143,27 +61,17 @@ if actor is None or not actor.email:
     elif actor is not None and not actor.email:
         st.info("You're unlocked as the program team. Sign in with Google to see the vendor experience.")
     st.subheader("How it works")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        with st.container(border=True):
-            st.markdown("**1. Sign in**")
-            st.caption("Enter your email and we'll send you a code.")
-    with c2:
-        with st.container(border=True):
-            st.markdown("**2. Register your event**")
-            st.caption("About 5 minutes. One event, or many at once by spreadsheet.")
-    with c3:
-        with st.container(border=True):
-            st.markdown("**3. Get matched**")
-            st.caption("We review within 5 business days and connect you with a speaker.")
+    ui.step_cards([("Sign in", "Enter your email and we'll send you a code."),
+                   ("Register your event", "About 5 minutes. One event, or many at once by spreadsheet."),
+                   ("Get matched", "We review within 5 business days and connect you with a speaker.")])
     if not logged_in:
-        otp_panel()
+        ui.otp_sign_in()
         if _secret("auth"):
             st.caption("Have a Google account set up for this program?")
             if st.button("Sign in with Google", icon=":material/login:", key="vnd_login"):
                 st.login()
     st.subheader("Questions")
-    faq()
+    ui.help_link("organizers", "Help for event organizers: FAQ, review times, editing")
     st.stop()
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -385,6 +293,7 @@ if view == "Register an event":
 # ── Bulk upload ────────────────────────────────────────────────────────────────
 elif view == "Bulk upload":
     st.markdown("#### Upload several events at once")
+    ui.help_link("bulk", "Column guide and tips")
     st.markdown("1. Download the template (it includes one example row — replace it).\n"
                 "2. Add one row per event. Dates use `YYYY-MM-DD`.\n"
                 "3. Upload the file. We check every row before anything is submitted.")
@@ -453,12 +362,11 @@ elif view == "My events":
             st.caption(f"{len(mine)} event(s) registered with {md(actor.email)}")
             for ev in mine:
                 d = ev.details
-                color, icon = BADGE.get(ev.status, ("gray", ":material/help:"))
                 with st.container(border=True):
                     h1, h2 = st.columns([3, 1], vertical_alignment="center")
                     h1.markdown(f"**{md(d.get('event_name'))}**")
                     with h2:
-                        st.badge(ev.status, color=color, icon=icon)
+                        ui.status_badge(ev.status)
                     where = ", ".join(x for x in (d.get("event_city"), d.get("event_country")) if x)
                     when = d.get("event_start", "") + (f" → {d['event_end']}" if d.get("event_end") else "")
                     st.caption(f":material/location_on: {md(where)}  ·  :material/calendar_today: {md(when)}  ·  "
@@ -477,12 +385,11 @@ elif view == "My events":
 
 # ── Help ───────────────────────────────────────────────────────────────────────
 else:
-    st.markdown("#### How to register your event")
-    st.markdown("1. **Register an event** — four short steps; your answers are kept if you go back.\n"
-                "2. Review everything, then **Submit**. You'll get a reference ID.\n"
-                "3. Track status in **My events**. Edit while it's *Pending*.\n"
-                "4. Have many events? Use **Bulk upload** with the template.")
-    faq()
+    st.markdown("#### Need a hand?")
+    st.markdown("Step-by-step instructions, the FAQ, and contact details are on the Help page.")
+    ui.help_link("organizers", "Help for event organizers")
+    ui.help_link("bulk", "Bulk upload template and column guide")
+    ui.help_link("signin", "Signing in with an email code")
     if st.button("Sign out", icon=":material/logout:", key="vnd_logout"):
         if logged_in:
             st.logout()

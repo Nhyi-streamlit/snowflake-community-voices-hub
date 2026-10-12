@@ -28,6 +28,8 @@ if actor is None or not actor.is_admin:
 svc = get_service()
 st.title("Workflow admin")
 show_flash()
+from utils import email_health
+email_health.render(actor)          # shown even when the workflow store isn't configured
 if svc is None:
     st.warning("Workflow store is not configured. Add the `[connections.cv_workflow]` secret (service user).")
     st.stop()

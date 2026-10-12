@@ -57,9 +57,14 @@ class _Pending:
     attempts: int = 0
 
 
-def _default_sender(to: str, subject: str, body_html: str) -> bool:
-    from utils.sheets import send_gmail
-    return send_gmail([to], subject, body_html)
+def _default_sender(to: str, subject: str, body_html: str):
+    """Returns a gmail_diag.SendResult (truthy on success) so failures carry a reason."""
+    from utils.sheets import send_gmail_result
+    return send_gmail_result([to], subject, body_html)
+
+
+FRIENDLY_SEND_ERROR = ("We couldn't send the code right now. Please try again in a minute, "
+                       "or email community@snowflake.com.")
 
 
 class OtpStore:
@@ -71,6 +76,7 @@ class OtpStore:
         self._sends: dict[str, deque] = defaultdict(deque)     # email -> send times (24h)
         self._session_sends: dict[str, int] = defaultdict(int)
         self._global: deque = deque()                          # send times (1h)
+        self.last_send: dict = {}                              # {"at", "ok", "reason"}: no address or code
 
     def _digest(self, email, code) -> bytes:
         return hmac.new(self.key, f"{email}|{code}".encode(), hashlib.sha256).digest()
@@ -114,14 +120,15 @@ class OtpStore:
                 f"<p>— Snowflake Community Voices</p>")
         try:
             sent = self.sender(email, "Your Community Voices sign-in code", body)
-        except Exception:
-            log.exception("otp send failed")
-            sent = False
+            reason = "" if sent else (getattr(sent, "reason", "") or "send_failed")
+        except Exception as e:
+            sent, reason = False, f"exception:{type(e).__name__}"
+        self.last_send = {"at": now, "ok": bool(sent), "reason": reason}
         if not sent:
+            log.warning("otp code email failed reason=%s", reason)   # never log the address or code
             with self._lock:
                 self._pending.pop(email, None)
-            return Reply(False, "We couldn't send the code right now. Please try again in a minute, "
-                                "or email community@snowflake.com.")
+            return Reply(False, FRIENDLY_SEND_ERROR)
         return Reply(True, f"We sent a 6-digit code to {email}. It expires in {CODE_TTL // 60} minutes — "
                            "check your spam folder if you don't see it.")
 

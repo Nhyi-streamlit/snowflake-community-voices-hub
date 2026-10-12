@@ -211,7 +211,8 @@ def test_signed_out_sees_landing_and_email_sign_in(sheets):
     assert at.text_input(key="otp_email_input") is not None
     assert any(b.label == "Email me a code" for b in at.button)
     assert not any(b.label == "Sign in with Google" for b in at.button)
-    assert any("Why do I need to sign in" in e.label for e in at.expander)
+    # FAQ text lives on the Help page now; the landing page links to it.
+    assert any("Help for event organizers" in m.value for m in at.markdown)
     at = page(None, {"auth": {"client_id": "x"}})                       # Google offered as a secondary option
     assert any(b.label == "Sign in with Google" for b in at.button)
 

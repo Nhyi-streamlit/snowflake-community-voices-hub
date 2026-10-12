@@ -107,11 +107,10 @@ def test_public_pages_render_signed_out():
     at = AppTest.from_file("pages/1_Speaker_Portal.py", default_timeout=30)
     at.run()
     assert not at.exception, at.exception
-    labels = [t.label for t in at.tabs]
-    assert len(labels) >= 7
-    # Tabs after the paused ones still render (previously st.stop() blanked them).
+    # Sections after a paused one still render (st.stop() used to blank them).
+    at.radio(key="spk_section").set_value("resources").run()
+    assert not at.exception, at.exception
     assert any("Brand Kit" in t.label for t in at.tabs)
-    assert any("paused" in w.value for w in at.warning)
 
 
 def test_audience_feedback_link_works_without_sign_in():

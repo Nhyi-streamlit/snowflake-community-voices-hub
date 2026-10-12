@@ -195,29 +195,48 @@ def claim_uber_code(email: str, tab_source: str) -> str | None:
 
 # ── Gmail notification ─────────────────────────────────────────────────────────
 
-def send_gmail(to: list[str], subject: str, body_html: str) -> bool:
-    """Send an email via Gmail API using existing OAuth credentials.
-
-    `to` is a list of email addresses. Returns True on success.
-    """
-    import base64
-    from email.mime.text import MIMEText
-
+def _gmail_token() -> str:
+    """Cached access token; token-endpoint errors become TokenError with Google's reason."""
+    from utils.gmail_diag import TokenError, parse_google_error
     try:
-        token = get_access_token()
-        msg = MIMEText(body_html, "html")
-        msg["To"] = ", ".join(to)
-        msg["Subject"] = subject
-        raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-        resp = requests.post(
-            "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
-            json={"raw": raw},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=15,
-        )
-        return resp.status_code == 200
-    except Exception:
-        return False
+        return get_access_token()
+    except requests.HTTPError as e:
+        try:
+            body = e.response.json()
+        except Exception:
+            body = {}
+        status = e.response.status_code if e.response is not None else 0
+        r = parse_google_error(status, body)
+        raise TokenError(r.reason, r.detail, r.status) from None
+
+
+_gmail_client = None
+
+
+def gmail_client():
+    """Process-wide Gmail client (keeps the last send result for the Email health panel)."""
+    global _gmail_client
+    if _gmail_client is None:
+        from utils.gmail_diag import GmailClient
+        _gmail_client = GmailClient(_secrets, requests.post, requests.get)
+    return _gmail_client
+
+
+def send_gmail_result(to: list[str], subject: str, body_html: str):
+    """Send via Gmail API; returns a SendResult with a diagnosable `reason` on failure."""
+    s = _secrets()
+    if not (s["GOOGLE_CLIENT_ID"] and s["GOOGLE_CLIENT_SECRET"] and s["GOOGLE_REFRESH_TOKEN"]):
+        return gmail_client().send(to, subject, body_html)   # records missing_credentials
+    return gmail_client().send(to, subject, body_html, token_fn=_gmail_token)
+
+
+def gmail_probe() -> dict:
+    return gmail_client().probe(token_fn=_gmail_token)
+
+
+def send_gmail(to: list[str], subject: str, body_html: str) -> bool:
+    """Send an email via Gmail API. Returns True on success (see send_gmail_result for the reason)."""
+    return bool(send_gmail_result(to, subject, body_html))
 
 
 def send_gmail_with_attachments(
