@@ -49,9 +49,9 @@ st.markdown("""
 
 # ── Tab order — put Feedback first if audience QR mode ─────────────────────────
 if _audience_mode:
-    TAB_NAMES = ["⭐ Talk Feedback", "🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources"]
+    TAB_NAMES = ["⭐ Talk Feedback", "🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources", "📸 Event Headcount"]
 else:
-    TAB_NAMES = ["🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources", "⭐ Talk Feedback"]
+    TAB_NAMES = ["🎤 Available Speaking Slots", "✈️ Book Your Travel", "🚗 Uber Request", "💰 Reimbursement", "📅 Upcoming Events", "📦 Resources", "⭐ Talk Feedback", "📸 Event Headcount"]
 
 tabs = st.tabs(TAB_NAMES)
 
@@ -64,6 +64,7 @@ tab_reimburse  = tab_map.get("💰 Reimbursement")
 tab_upcoming   = tab_map.get("📅 Upcoming Events")
 tab_resources  = tab_map.get("📦 Resources")
 tab_feedback   = tab_map.get("⭐ Talk Feedback")
+tab_headcount  = tab_map.get("📸 Event Headcount")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: AVAILABLE SPEAKING SLOTS
@@ -1050,3 +1051,133 @@ with section(tab_reimburse):
                 st.rerun()
             else:
                 st.error("Could not save your request. Please try again or email aba.micah@snowflake.com.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB: EVENT HEADCOUNT — Cortex AI counts attendees in uploaded event photos
+# ═══════════════════════════════════════════════════════════════════════════════
+with section(tab_headcount):
+    from utils import headcount as hc
+
+    st.markdown("### 📸 Event Headcount")
+    st.caption(
+        "Upload photos from your event and Snowflake Cortex AI counts the people in each one. "
+        "Wide room shots work best. Your counts are saved so you can report attendance."
+    )
+    if speaker_identity is None:
+        st.info("Sign in with Google (sidebar) to count attendance from your event photos.")
+        raise SectionDone
+    _hc_params = hc.connection_params(st.secrets)
+    if not _hc_params:
+        st.info("Event Headcount is being set up and will be available soon.")
+        raise SectionDone
+
+    @st.cache_resource
+    def _hc_store(_params_key: str):
+        return hc.HeadcountStore(hc.connect(hc.connection_params(st.secrets)))
+
+    try:
+        _store = _hc_store(str(sorted(_hc_params)))
+        _me = speaker_identity.email
+        _events = _store.list_events(_me)
+    except Exception as e:
+        print(f"[headcount] connection failed: {e}")
+        st.error("Event Headcount is temporarily unavailable. Please try again later.")
+        raise SectionDone
+
+    _c1, _c2, _c3 = st.columns(3)
+    _c1.metric("Your events", len(_events))
+    _c2.metric("Photos analyzed", sum(e["photos"] or 0 for e in _events))
+    _c3.metric("Total attendance", sum((e["reported"] or e["peak"] or 0) for e in _events))
+
+    with st.expander("➕ New event", expanded=not _events):
+        with st.form("hc_new_event", clear_on_submit=True):
+            _n = st.text_input("Event name *", max_chars=200)
+            _a, _b = st.columns(2)
+            _d = _a.date_input("Event date", value=None)
+            _l = _b.text_input("Location", max_chars=200)
+            if st.form_submit_button("Create event", type="primary"):
+                if not _n.strip():
+                    st.error("Event name is required.")
+                else:
+                    st.session_state["hc_event"] = _store.create_event(_me, _n.strip(), _d, _l.strip() or None)
+                    st.rerun()
+
+    if not _events:
+        raise SectionDone
+
+    _ids = [e["id"] for e in _events]
+    _default = _ids.index(st.session_state["hc_event"]) if st.session_state.get("hc_event") in _ids else 0
+    _sel_id = st.selectbox(
+        "Event",
+        _ids,
+        index=_default,
+        format_func=lambda i: next(
+            f"{e['name']} — {e['date'] or 'no date'} · {e['reported'] or e['peak'] or 0} people" for e in _events if e["id"] == i
+        ),
+    )
+    st.session_state["hc_event"] = _sel_id
+    _ev = next(e for e in _events if e["id"] == _sel_id)
+
+    _m1, _m2, _m3 = st.columns(3)
+    _m1.metric("Peak photo", _ev["peak"] if _ev["peak"] is not None else "—", help="Highest single-photo count — best headcount estimate")
+    _m2.metric("Sum of photos", _ev["total"] if _ev["total"] is not None else "—", help="May double-count people in several photos")
+    with _m3:
+        _rep = st.number_input("Reported attendance", min_value=0, step=1, value=_ev["reported"], placeholder=str(_ev["peak"] or ""))
+        if st.button("Save attendance", key="hc_save_rep"):
+            _store.set_reported(_me, _sel_id, None if _rep is None else int(_rep))
+            st.rerun()
+
+    _files = st.file_uploader(
+        "Upload event photos",
+        type=["jpg", "jpeg", "png", "webp"],
+        accept_multiple_files=True,
+        key=f"hc_up_{_sel_id}_{st.session_state.get('hc_up_n', 0)}",
+    )
+    if _files and st.button(f"Count people in {len(_files)} photo(s)", type="primary"):
+        _bar = st.progress(0.0, text="Counting people…")
+        for i, f in enumerate(_files, 1):
+            data = f.getvalue()
+            if len(data) > hc.MAX_UPLOAD_BYTES:
+                st.warning(f"{f.name}: larger than 15 MB, skipped.")
+                continue
+            try:
+                _store.add_photo(_me, _sel_id, f.name, data)
+            except Exception as e:
+                print(f"[headcount] photo failed: {e}")
+                st.warning(f"{f.name}: could not be processed.")
+            _bar.progress(i / len(_files), text=f"Counting people… {i}/{len(_files)}")
+        st.session_state["hc_up_n"] = st.session_state.get("hc_up_n", 0) + 1
+        st.rerun()
+
+    _photos = _store.list_photos(_me, _sel_id)
+    if _photos:
+        _df = pd.DataFrame(_photos)
+        _edited = st.data_editor(
+            _df[["file_name", "ai_count", "confidence", "manual_count", "notes"]],
+            column_config={
+                "file_name": st.column_config.TextColumn("Photo", disabled=True),
+                "ai_count": st.column_config.NumberColumn("AI count", disabled=True),
+                "confidence": st.column_config.TextColumn("Confidence", disabled=True),
+                "manual_count": st.column_config.NumberColumn("Manual count", min_value=0, step=1, help="Overrides the AI count"),
+                "notes": st.column_config.TextColumn("AI notes", disabled=True),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key=f"hc_grid_{_sel_id}",
+        )
+        _changed = False
+        for idx, row in _edited.iterrows():
+            new, old = row["manual_count"], _df.at[idx, "manual_count"]
+            new = None if pd.isna(new) else int(new)
+            old = None if pd.isna(old) else int(old)
+            if new != old:
+                _store.set_manual(_me, _sel_id, _df.at[idx, "id"], new)
+                _changed = True
+        if _changed:
+            st.rerun()
+
+    if st.button("🗑️ Delete this event", key="hc_del"):
+        _store.delete_event(_me, _sel_id)
+        st.session_state.pop("hc_event", None)
+        st.rerun()
