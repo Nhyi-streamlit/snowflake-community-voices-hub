@@ -119,11 +119,13 @@ def main(argv=None) -> int:
 
     token, user = secret("notify.slack.bot_token"), secret("recap.slack_user_id")
     via = str(secret("recap.slack_via", "") or ("bot" if token else "cortex"))
+    if via == "none":
+        user = user or "none"            # draft + Doc only; the morning briefing flags "Approve the weekly recap"
     if not user or (via == "bot" and not token):
         print("Missing [recap] slack_user_id (and [notify.slack] bot_token when slack_via = 'bot')")
         return 2
     from workflow.channels import SlackChannel
-    slack = SlackChannel(bot_token=token) if via == "bot" else CortexSlackDM(user)
+    slack = None if via == "none" else SlackChannel(bot_token=token) if via == "bot" else CortexSlackDM(user)
     base = str(secret("APP_BASE_URL", "") or "").rstrip("/")
     out = rp.publish_draft(tabs, today, make_doc=lambda t, h: create_google_doc(t, h, secret("recap.drive_folder_id") or None),
                            slack=slack, dm_user=user, include_recap=bool(secret("recap.dm_full_recap", True)),

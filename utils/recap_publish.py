@@ -70,6 +70,9 @@ def publish_draft(tabs: dict, today, *, make_doc, slack, dm_user: str, admin_url
         lines += ["", slack_text]
     current = f"doc_failed:{reason}" if reason else (existing or {}).get("send_result", "")
     prior = ";".join(x for x in current.split(";") if x and x != "dm:failed")
+    if slack is None:                        # DM switched off (slack_via = "none")
+        _set(rid, send_result=prior)
+        return Outcome(True, "Draft saved (Slack DM is off).", rid, doc_url)
     try:
         slack.send_mrkdwn(dm_user, "\n".join(lines))
     except DeliveryError as e:

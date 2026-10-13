@@ -506,3 +506,8 @@ def test_failed_dm_is_retried_once_on_next_run(mem):
     assert len(slack.sent) == 1 and len(docs.calls) == 1 and "dm:failed" not in ops.records("Recaps")[0]["send_result"]
     rp.publish_draft(sheet_tabs(), TODAY, make_doc=docs, slack=slack, dm_user="U_ABA")
     assert len(slack.sent) == 1                                   # no third DM
+
+
+def test_dm_off_still_drafts(mem):
+    out = rp.publish_draft(sheet_tabs(), TODAY, make_doc=Docs(), slack=None, dm_user="none")
+    assert out.ok and "DM is off" in out.message and ops.records("Recaps")[0]["status"] == ops.DRAFT
