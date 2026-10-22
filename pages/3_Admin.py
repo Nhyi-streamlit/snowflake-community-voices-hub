@@ -61,7 +61,7 @@ if st.button("Refresh data", key="refresh"):
     st.rerun()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms, tab_upload, tab_navan = st.tabs([
+tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms, tab_upload, tab_navan, tab_expenses = st.tabs([
     "Applications Queue",
     "Vendor Events",
     "Speaker-Event Matches",
@@ -70,6 +70,7 @@ tab_apps, tab_events, tab_matches, tab_q3, tab_feedback, tab_comms, tab_upload, 
     "Comms Generator",
     "Bulk Upload",
     "✈️ Navan Travel",
+    "💰 Expense Forms",
 ])
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -946,4 +947,51 @@ Community Voices Program, Snowflake"""
                     notes      = r.get("admin_notes", "")
                     sent_date  = notes.split("Navan: sent")[-1].strip().split("|")[0].strip() if "Navan: sent" in notes else ""
                     st.markdown(f"- ✅ **{full_name}** — {event_name} ({dep_date}){' · sent ' + sent_date if sent_date else ''}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB: EXPENSE FORMS
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab_expenses:
+    st.markdown("### Submitted expense forms")
+    st.caption("Speakers upload completed expense forms via the Speaker Portal. Download them here to forward to finance.")
+
+    @st.cache_data(ttl=120)
+    def load_expense_forms():
+        try:
+            return read_tab("Expense_Forms")
+        except Exception:
+            return pd.DataFrame()
+
+    exp_df = load_expense_forms()
+
+    if exp_df.empty or len(exp_df) == 0:
+        st.info("No expense forms submitted yet.", icon=":material/folder_open:")
+    else:
+        st.markdown(f"**{len(exp_df)} form(s) submitted**")
+        for idx, row in exp_df.iterrows():
+            eid = row.get("expense_id", "")
+            name = row.get("speaker_name", "")
+            email = row.get("speaker_email", "")
+            event = row.get("event_name", "")
+            fname = row.get("filename", "")
+            link = row.get("drive_link", "")
+            notes = row.get("notes", "")
+            status = row.get("status", "")
+            submitted = row.get("submitted_at", "")
+
+            with st.expander(f"**{name}** — {event} · {fname} · {submitted}"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**ID:** `{eid}`")
+                    st.markdown(f"**Speaker:** {name} ({email})")
+                    st.markdown(f"**Event:** {event}")
+                with c2:
+                    st.markdown(f"**File:** {fname}")
+                    st.markdown(f"**Status:** {status}")
+                    if notes:
+                        st.markdown(f"**Notes:** {notes}")
+                if link:
+                    st.link_button(":material/download: Open in Google Drive", link, type="primary")
+                else:
+                    st.warning("No Drive link — ask the speaker to email the form directly.")
 

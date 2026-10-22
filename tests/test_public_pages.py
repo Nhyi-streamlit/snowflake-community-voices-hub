@@ -99,7 +99,8 @@ def test_speaker_portal_renders_signed_out_in_every_section(section):
     assert at.radio(key="spk_section").value == section
     assert not any("paused" in w.value.lower() for w in at.warning)      # one friendly card instead
     if section == "travel":
-        assert sum("coming soon" in m.value for m in at.markdown) == 1
+        assert not at.exception, at.exception                           # one sign-in box for all travel forms
+        assert any("Expense reimbursement" in m.value for m in at.markdown)
         assert at.text_input(key="spk_otp_email_input") is not None      # reimbursement needs sign-in
     if section == "after":
         assert at.text_input(key="qr_name") is not None                  # QR generator is public

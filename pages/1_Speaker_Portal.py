@@ -18,7 +18,7 @@ from utils import public_events
 from utils import ui_components as ui
 from utils.styles import inject_css
 from utils.sections import SectionDone
-from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code
+from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code, upload_file_to_drive, get_or_create_receipts_folder
 from utils.confirmation import generate_confirmation_id
 
 CONFERENCE_FORM_URL = "https://app-superhero-creator-form-5rkbvp9kjmrkjjkqfbslqj.streamlit.app/"
@@ -88,9 +88,17 @@ def gate(*names):
         raise SectionDone
 
 
+_sign_in_shown = False      # one sign-in box per run; a section can have several blocks that need it
+
+
 def require_sign_in(what: str):
     """Show the email-code sign-in and stop this section if the visitor isn't signed in."""
+    global _sign_in_shown
     if speaker_identity is None:
+        if _sign_in_shown:
+            st.info(f"Sign in above to {what}.", icon=":material/lock:")
+            raise SectionDone
+        _sign_in_shown = True
         st.info(f"Sign in to {what}. We'll email you a 6-digit code — no account needed.",
                 icon=":material/lock:")
         ui.otp_sign_in(prefix="spk_otp")
@@ -450,8 +458,96 @@ with show("travel"):
         st.link_button("Request conference support (Data Superheroes & Streamlit Creators)", CONFERENCE_FORM_URL,
                        icon=":material/open_in_new:", type="primary")
 
-    ui.coming_soon("Travel booking and Uber codes",
-                   "Booking flights, hotels, and local rides through the portal will be back soon.")
+    # ── Expense form template download + upload ────────────────────────────
+    st.markdown("### :material/receipt_long: Expense reimbursement")
+    st.markdown(
+        "Download the expense form template, fill it in offline, and upload it here. "
+        "Your completed form is saved to Google Drive where the program team can review and share it with finance."
+    )
+
+    _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "..", "assets", "expense_form_template.xlsx")
+
+    try:
+        with open(_TEMPLATE_PATH, "rb") as _tf:
+            _template_bytes = _tf.read()
+        st.download_button(
+            ":material/download: Download expense form template",
+            data=_template_bytes,
+            file_name="Expense_Form_Template.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_expense_template",
+        )
+    except FileNotFoundError:
+        st.warning("Expense form template not found. Contact aba.micah@snowflake.com to get one.")
+
+    st.divider()
+    st.markdown("#### Upload your completed expense form")
+    require_sign_in("submit an expense form")
+
+    if st.session_state.get("sp_expense_upload_done"):
+        st.success("Expense form uploaded. The program team will review it and forward to finance.")
+        _exp_link = st.session_state.get("sp_expense_drive_link", "")
+        if _exp_link:
+            st.markdown(f"[View your uploaded form in Google Drive]({_exp_link})")
+        if st.button("Upload another form", key="sp_expense_reset"):
+            st.session_state.pop("sp_expense_upload_done", None)
+            st.session_state.pop("sp_expense_drive_link", None)
+            st.rerun()
+        raise SectionDone
+
+    _exp_name = st.text_input("Your full name *", key="exp_name")
+    _exp_event = st.text_input("Event name *", placeholder="Data Summit NYC", key="exp_event")
+    _exp_file = st.file_uploader(
+        "Upload completed expense form",
+        type=["xlsx", "xls", "pdf", "csv"],
+        accept_multiple_files=False,
+        key="exp_file_upload",
+    )
+    _exp_notes = st.text_area("Notes for the reviewer (optional)", height=80, key="exp_notes")
+
+    st.info(
+        "Accepted formats: `.xlsx`, `.xls`, `.pdf`, `.csv`. "
+        "Reimbursements are processed within **10 business days** of approval.",
+        icon=":material/info:",
+    )
+
+    _exp_can_submit = all([_exp_name, _exp_event, _exp_file])
+    if not _exp_can_submit:
+        st.caption("Fill in your name, event, and attach the form to submit.")
+
+    if st.button("Submit expense form", type="primary", disabled=not _exp_can_submit, key="exp_submit"):
+        import uuid as _uuid_exp
+        import mimetypes as _mt_exp
+
+        _exp_id = "EXP-2026-" + _uuid_exp.uuid4().hex[:8].upper()
+        _exp_now = _now()
+        _exp_data = _exp_file.getvalue()
+        _exp_mime = _exp_file.type or _mt_exp.guess_type(_exp_file.name)[0] or "application/octet-stream"
+
+        # Upload to Google Drive
+        _drive_link = ""
+        try:
+            folder_id = get_or_create_receipts_folder(_exp_id)
+            if folder_id:
+                _drive_link = upload_file_to_drive(_exp_data, _exp_file.name, _exp_mime, folder_id) or ""
+        except Exception:
+            pass
+
+        _status = "Uploaded to Drive" if _drive_link else "Upload failed — email form to aba.micah@snowflake.com"
+
+        _row = [
+            _exp_id, _exp_now,
+            _exp_name.strip(), speaker_identity.email,
+            _exp_event.strip(), _exp_file.name,
+            _drive_link, _exp_notes or "", _status,
+        ]
+        if append_row("Expense_Forms", _row):
+            st.session_state["sp_expense_upload_done"] = True
+            st.session_state["sp_expense_drive_link"] = _drive_link
+            st.rerun()
+        else:
+            st.error("Could not save. Please try again or email aba.micah@snowflake.com.")
+
     ui.help_link("travel", "How travel support works")
     raise SectionDone       # legacy booking form below is kept but paused
 
