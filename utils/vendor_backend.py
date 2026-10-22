@@ -18,7 +18,7 @@ log = logging.getLogger("cv.vendor")
 
 WORKFLOW, SHEETS = "workflow", "sheets"
 RETRY_MSG = ("We couldn't save that right now. Your answers are still here — please try again in a "
-             "minute, or email community@snowflake.com if it keeps happening.")
+             "minute, or email aba.micah@snowflake.com if it keeps happening.")
 LOAD_MSG = "We couldn't load your events right now. Please refresh in a minute."
 
 EVENT_COLS = ["event_id", "submitted_at", "status", "organizer_name", "organizer_email", "organizer_org",
@@ -203,7 +203,7 @@ def submit_event(actor, draft: dict, token: str) -> Outcome:
     except InvalidAction as exc:
         return Outcome(False, message=str(exc))
     except NotAuthorized:
-        return Outcome(False, message="Your account can't submit events. Contact community@snowflake.com.")
+        return Outcome(False, message="Your account can't submit events. Contact aba.micah@snowflake.com.")
     except Exception:
         log.exception("vendor submit failed")
         return Outcome(False, message=RETRY_MSG)

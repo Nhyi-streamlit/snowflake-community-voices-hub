@@ -531,7 +531,7 @@ We're excited to have you represent the Snowflake community on stage. Please rep
 Talk soon,
 Aba Micah
 Community Voices Program Manager
-Snowflake | community@snowflake.com
+Snowflake | aba.micah@snowflake.com
 """
             st.text_area("Email draft (click to copy)", value=email_draft, height=380, key="email_draft_text")
             st.caption("Replace [APP_URL] with the deployed app URL before sending.")
@@ -570,7 +570,7 @@ Thank you for being part of the Snowflake community.
 
 Aba Micah
 Community Voices Program Manager
-Snowflake | community@snowflake.com
+Snowflake | aba.micah@snowflake.com
 """
             st.text_area("Rejection draft", value=rej_draft, height=300, key="rej_draft_text")
 

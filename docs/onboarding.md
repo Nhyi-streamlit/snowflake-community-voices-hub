@@ -103,7 +103,7 @@ Don't commit any of these values.
 >
 > You can check status and edit pending events anytime under **My events**.
 >
-> Questions? Just reply to this email or write to community@snowflake.com.
+> Questions? Just reply to this email or write to aba.micah@snowflake.com.
 >
 > Thanks,
 > Aba Micah

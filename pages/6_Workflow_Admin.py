@@ -33,7 +33,8 @@ email_health.render(actor)          # shown even when the workflow store isn't c
 
 # Areas. The first three read the Google Sheet, so they work before the workflow store is provisioned.
 AREAS = {"needs": ":material/priority_high: Needs you", "recaps": ":material/summarize: Recaps",
-         "content": ":material/fact_check: Content checks", "workflow": ":material/inbox: Workflow"}
+         "content": ":material/fact_check: Content checks", "conference": ":material/flight: Conference support",
+         "workflow": ":material/inbox: Workflow"}
 if "admin_area" not in st.session_state:
     _q = st.query_params.get("tab", "needs")
     st.session_state["admin_area"] = _q if _q in AREAS else "needs"
@@ -47,6 +48,9 @@ if area != "workflow":
         ops_admin.render_needs_you(actor, svc)
     elif area == "recaps":
         ops_admin.render_recaps(actor)
+    elif area == "conference":
+        from utils import conference
+        conference.render(actor)
     else:
         ops_admin.render_content(actor, svc)
     st.stop()

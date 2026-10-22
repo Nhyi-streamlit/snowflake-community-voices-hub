@@ -12,7 +12,7 @@ import streamlit as st
 
 from workflow.ui import md  # noqa: F401  (re-exported for pages)
 
-CONTACT_EMAIL = "community@snowflake.com"
+CONTACT_EMAIL = "aba.micah@snowflake.com"
 
 HERO_THEMES = {
     "navy": "linear-gradient(135deg,#0E2346 0%,#1B3A6B 100%)",      # Homepage / Help

@@ -20,6 +20,8 @@ from utils.styles import inject_css
 from utils.sections import SectionDone
 from utils.sheets import read_tab, append_row, get_access_token, claim_uber_code
 from utils.confirmation import generate_confirmation_id
+
+CONFERENCE_FORM_URL = "https://app-superhero-creator-form-5rkbvp9kjmrkjjkqfbslqj.streamlit.app/"
 from workflow.runtime import get_actor
 from workflow.ui import md
 
@@ -111,6 +113,8 @@ with show("start"):
                     "only sign in (with an emailed code) for things tied to you, like reimbursements.")
         ui.help_link("speakers", "Read the speaker guide")
         ui.help_link("travel", "How travel and reimbursement work")
+        st.link_button("Request conference support (Data Superheroes & Streamlit Creators)", CONFERENCE_FORM_URL,
+                       icon=":material/flight_takeoff:")
     if speaker_identity is not None:
         st.caption(f"Signed in as {md(speaker_identity.email)}")
 
@@ -438,6 +442,14 @@ with show("feedback", "after"):
 # ══════════════════════════════════════════════════════════════════════════════
 with show("travel"):
     gate("travel")
+
+    with st.container(border=True):
+        st.markdown("#### :material/flight_takeoff: Speaking at a conference?")
+        st.markdown("Data Superheroes and Streamlit Creators can request travel and event support. "
+                    "Once the program team approves your request, we arrange booking with our travel partner.")
+        st.link_button("Request conference support (Data Superheroes & Streamlit Creators)", CONFERENCE_FORM_URL,
+                       icon=":material/open_in_new:", type="primary")
+
     ui.coming_soon("Travel booking and Uber codes",
                    "Booking flights, hotels, and local rides through the portal will be back soon.")
     ui.help_link("travel", "How travel support works")
@@ -1080,6 +1092,11 @@ def _hc_preview(data: bytes, boxes: list) -> bytes:
     img.save(out, format="JPEG", quality=85)
     return out.getvalue()
 
+
+with show("after"):
+    gate("after")
+    from utils import program_feedback
+    program_feedback.render()
 
 with show("after"):
     gate("after")

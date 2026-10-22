@@ -122,7 +122,8 @@ class GmailClient:
             log.warning("gmail send failed reason=%s status=%s", res.reason, res.status)
         return res
 
-    def send(self, to: list[str], subject: str, body_html: str, token_fn=None) -> SendResult:
+    def send(self, to: list[str], subject: str, body_html: str, token_fn=None,
+             cc: list[str] | None = None) -> SendResult:
         try:
             token = (token_fn or self.token)()
         except TokenError as e:
@@ -131,6 +132,8 @@ class GmailClient:
             return self._record(SendResult(False, "network_error", 0, scrub(type(e).__name__)), to)
         msg = MIMEText(body_html, "html")
         msg["To"], msg["Subject"] = ", ".join(to), subject
+        if cc:
+            msg["Cc"] = ", ".join(cc)
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         try:
             resp = self.post(SEND_URL, json={"raw": raw}, headers={"Authorization": f"Bearer {token}"}, timeout=15)

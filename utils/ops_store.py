@@ -15,6 +15,10 @@ HEADERS = {
     "Triage_Rules": ["key", "value"],
     "Digest": ["generated_at", "key", "value", "link"],
     "Content_Review": ["review_key", "item_id", "version", "checked_at", "ai_note"],
+    "Conference_Approvals": ["key", "name", "email", "conference", "dates", "submitted_at", "status", "notified_at",
+                             "decided_by", "decided_at", "navan_sent_at", "notes"],
+    "Program_Feedback": ["feedback_id", "submitted_at", "name", "email", "community", "event", "topic", "rating",
+                         "went_well", "improve", "follow_up_ok"],
 }
 
 DRAFT, APPROVED, SENT, DISCARDED = "Draft", "Approved", "Sent", "Discarded"

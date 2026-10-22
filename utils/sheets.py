@@ -50,12 +50,15 @@ def get_access_token() -> str:
 
 # ── Read ───────────────────────────────────────────────────────────────────────
 
-def read_tab(tab: str) -> pd.DataFrame:
-    """Read all rows from a named sheet tab. Returns DataFrame (headers as columns)."""
+def read_tab(tab: str, spreadsheet_id: str | None = None) -> pd.DataFrame:
+    """Read all rows from a named sheet tab. Returns DataFrame (headers as columns).
+
+    `spreadsheet_id` reads another spreadsheet the same Google account can see (default: the hub sheet).
+    """
     s = _secrets()
     token = get_access_token()
     url = (
-        f"https://sheets.googleapis.com/v4/spreadsheets/{s['GOOGLE_SPREADSHEET_ID']}"
+        f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id or s['GOOGLE_SPREADSHEET_ID']}"
         f"/values/{requests.utils.quote(tab)}"
     )
     resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
@@ -222,12 +225,12 @@ def gmail_client():
     return _gmail_client
 
 
-def send_gmail_result(to: list[str], subject: str, body_html: str):
+def send_gmail_result(to: list[str], subject: str, body_html: str, cc: list[str] | None = None):
     """Send via Gmail API; returns a SendResult with a diagnosable `reason` on failure."""
     s = _secrets()
     if not (s["GOOGLE_CLIENT_ID"] and s["GOOGLE_CLIENT_SECRET"] and s["GOOGLE_REFRESH_TOKEN"]):
-        return gmail_client().send(to, subject, body_html)   # records missing_credentials
-    return gmail_client().send(to, subject, body_html, token_fn=_gmail_token)
+        return gmail_client().send(to, subject, body_html, cc=cc)   # records missing_credentials
+    return gmail_client().send(to, subject, body_html, token_fn=_gmail_token, cc=cc)
 
 
 def gmail_probe() -> dict:

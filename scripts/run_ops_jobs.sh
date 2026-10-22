@@ -15,4 +15,6 @@ PY="${CV_PYTHON:-/usr/local/bin/python3}"
   # Idempotent: each reminder is recorded once per item and offset day; AI reviews only new versions.
   "$PY" scripts/content_jobs.py --reminders --ai-review
   "$PY" scripts/daily_digest.py --write
+  # New conference support requests -> Conference_Approvals + email to Aba only (Navan is emailed on Approve).
+  "$PY" scripts/conference_requests.py --notify
 } >> "$LOG" 2>&1

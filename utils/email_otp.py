@@ -64,7 +64,7 @@ def _default_sender(to: str, subject: str, body_html: str):
 
 
 FRIENDLY_SEND_ERROR = ("We couldn't send the code right now. Please try again in a minute, "
-                       "or email community@snowflake.com.")
+                       "or email aba.micah@snowflake.com.")
 
 
 class OtpStore:
