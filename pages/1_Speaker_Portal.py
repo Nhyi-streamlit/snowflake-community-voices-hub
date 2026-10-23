@@ -1,7 +1,7 @@
 """Speaker Portal: get started, find events, resources, travel & expenses, and after-talk tools.
 
-Public: everything except personal submissions. Personal sections (reimbursement, headcount) use the
-same email-code sign-in as the Vendor Portal (or Google). The audience feedback link
+Public: everything except personal submissions. Personal sections (reimbursement, headcount) ask for the
+speaker's email once per session (format-checked, no code is sent). The audience feedback link
 (?speaker=&event=&talk=) opens the rating form directly, with no sign-in.
 """
 import sys, os
@@ -33,10 +33,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
-# Verified speaker (email code or Google), or None. Anything personal requires it.
+# Speaker's email for this session: typed in once (format-checked, not verified), or a Google sign-in.
+from types import SimpleNamespace
+from utils.email_otp import valid_email
 speaker_identity = get_actor()
 if speaker_identity is not None and not speaker_identity.email:
     speaker_identity = None          # password-only admin session: no personal identity
+if speaker_identity is None and st.session_state.get("spk_email"):
+    speaker_identity = SimpleNamespace(email=st.session_state["spk_email"])
 
 params = st.query_params
 _speaker_param = params.get("speaker", "")
@@ -92,16 +96,22 @@ _sign_in_shown = False      # one sign-in box per run; a section can have severa
 
 
 def require_sign_in(what: str):
-    """Show the email-code sign-in and stop this section if the visitor isn't signed in."""
+    """Ask for the speaker's email (no code, no account) and stop this section until it's entered."""
     global _sign_in_shown
     if speaker_identity is None:
         if _sign_in_shown:
-            st.info(f"Sign in above to {what}.", icon=":material/lock:")
+            st.info(f"Enter your email above to {what}.", icon=":material/mail:")
             raise SectionDone
         _sign_in_shown = True
-        st.info(f"Sign in to {what}. We'll email you a 6-digit code — no account needed.",
-                icon=":material/lock:")
-        ui.otp_sign_in(prefix="spk_otp")
+        with st.form("spk_email_form", border=True):
+            st.markdown(f"Enter your email to {what}. We use it to match your submissions and reply to you.")
+            entered = st.text_input("Your email", key="spk_email_input", placeholder="you@company.com")
+            go = st.form_submit_button("Continue", type="primary")
+        if go:
+            if valid_email(entered):
+                st.session_state["spk_email"] = entered.strip().lower()
+                st.rerun()
+            st.error("Enter a valid email address.")
         raise SectionDone
 
 
@@ -118,13 +128,13 @@ with show("start"):
         st.markdown("#### :material/lightbulb: New here?")
         st.markdown("Community Voices supports Snowflake Data Superheroes, Squad members, Streamlit Creators, and "
                     "practitioners with a real story to tell. Browsing and resources are open to everyone — you "
-                    "only sign in (with an emailed code) for things tied to you, like reimbursements.")
+                    "only enter your email for things tied to you, like reimbursements.")
         ui.help_link("speakers", "Read the speaker guide")
         ui.help_link("travel", "How travel and reimbursement work")
         st.link_button("Request conference support (Data Superheroes & Streamlit Creators)", CONFERENCE_FORM_URL,
                        icon=":material/flight_takeoff:")
     if speaker_identity is not None:
-        st.caption(f"Signed in as {md(speaker_identity.email)}")
+        st.caption(f"Using {md(speaker_identity.email)}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: AVAILABLE SPEAKING SLOTS
@@ -265,7 +275,7 @@ with show("speak"):
                     with st.form(key=f"sp_form_{sheet_row}"):
                         c_n, c_e = st.columns(2)
                         with c_n: n = st.text_input("Your name", key=f"sp_n_{sheet_row}")
-                        with c_e: st.text_input("Verified email", value=speaker_identity.email, disabled=True, key=f"sp_e_{sheet_row}")
+                        with c_e: st.text_input("Your email", value=speaker_identity.email, disabled=True, key=f"sp_e_{sheet_row}")
                         e = speaker_identity.email
                         sub = st.form_submit_button("Submit interest", type="primary", width="stretch")
                     if sub and n and e:
@@ -586,7 +596,7 @@ with show("travel"):
     st.markdown('<div class="section-title">Personal details</div>', unsafe_allow_html=True)
     pd1, pd2 = st.columns(2)
     with pd1:
-        tv_email = st.text_input("Verified email", value=speaker_identity.email, disabled=True, key="tv_email")
+        tv_email = st.text_input("Your email", value=speaker_identity.email, disabled=True, key="tv_email")
         tv_email = speaker_identity.email
     with pd2:
         passport_name = st.text_input(
@@ -812,7 +822,7 @@ with show("travel"):
 
     st.markdown("**Your details**")
     ub1, ub2 = st.columns(2)
-    with ub1: st.text_input("Verified email", value=speaker_identity.email, disabled=True, key="ub_email")
+    with ub1: st.text_input("Your email", value=speaker_identity.email, disabled=True, key="ub_email")
     ub_email = speaker_identity.email
     with ub2: ub_name  = st.text_input("Your full name *", key="ub_name")
 
@@ -923,7 +933,7 @@ with show("travel"):
         with rb1:
             rf_name  = st.text_input("Full name *", key="rf_name")
         with rb2:
-            st.text_input("Verified email", value=speaker_identity.email, disabled=True, key="rf_email")
+            st.text_input("Your email", value=speaker_identity.email, disabled=True, key="rf_email")
             rf_email = speaker_identity.email
         rb3, rb4, rb5 = st.columns(3)
         with rb3:

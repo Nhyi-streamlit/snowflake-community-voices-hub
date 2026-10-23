@@ -101,10 +101,10 @@ def test_speaker_portal_renders_signed_out_in_every_section(section):
     if section == "travel":
         assert not at.exception, at.exception                           # one sign-in box for all travel forms
         assert any("Expense reimbursement" in m.value for m in at.markdown)
-        assert at.text_input(key="spk_otp_email_input") is not None      # reimbursement needs sign-in
+        assert at.text_input(key="spk_email_input") is not None      # reimbursement needs sign-in
     if section == "after":
         assert at.text_input(key="qr_name") is not None                  # QR generator is public
-        assert at.text_input(key="spk_otp_email_input") is not None      # headcount needs sign-in
+        assert at.text_input(key="spk_email_input") is not None      # headcount needs sign-in
     if section == "speak":
         shown = at.dataframe[0].value
         assert list(shown["Event"].str.startswith("Data Summit")) == [True]   # approved + upcoming only
@@ -124,7 +124,7 @@ def test_feedback_qr_link_works_without_sign_in(monkeypatch):
     hero = next(m.value for m in at.markdown if "Rate this Talk" in m.value)
     assert "&lt;b&gt;" in hero and "<b>" not in hero
     assert all(r.key != "spk_section" for r in at.radio)                 # rating form only, no portal nav
-    assert not any(t.key and t.key.startswith("spk_otp") for t in at.text_input)   # no sign-in prompt
+    assert not any(t.key and t.key == "spk_email_input" for t in at.text_input)   # no sign-in prompt
     at.button(key="fb_submit").click().run()
     assert not at.exception, at.exception
     assert any("Thank you" in s.value for s in at.success)
@@ -142,3 +142,19 @@ def test_help_page_renders_every_topic(topic):
 def test_help_is_public_in_navigation():
     at = run("streamlit_app.py")
     assert links(at, at.sidebar)["Help & instructions"] == "help"
+
+
+def test_speaker_email_entry_unlocks_forms_without_sending_a_code(monkeypatch):
+    from utils import email_otp
+    monkeypatch.setattr(email_otp, "request_code", lambda *a, **k: pytest.fail("no code should be sent"),
+                        raising=False)
+    at = run("pages/1_Speaker_Portal.py", query={"section": "travel"})
+    at.text_input(key="spk_email_input").input("not-an-email")
+    next(b for b in at.button if b.label == "Continue").click().run()
+    assert any("valid email" in e.value for e in at.error)
+    at.text_input(key="spk_email_input").input("Ada@Example.com")
+    next(b for b in at.button if b.label == "Continue").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["spk_email"] == "ada@example.com"
+    keys = [t.key for t in at.text_input]
+    assert "exp_name" in keys and "spk_email_input" not in keys
