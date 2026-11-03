@@ -320,10 +320,13 @@ with show("speak"):
         st.info("No upcoming events yet — check back soon.", icon=":material/event_upcoming:")
     else:
         view = upcoming_df.rename(columns={"event_name": "Event", "event_city": "City", "event_country": "Country",
-                                           "start": "Starts", "event_format": "Format"})
-        st.dataframe(view[[c for c in ["Starts", "Event", "City", "Country", "Format"] if c in view]],
+                                           "start": "Starts", "event_format": "Format",
+                                          "community_alignment": "Key topics", "event_description": "CFP / details",
+                                          "event_website": "Info & sign-up"})
+        st.dataframe(view[[c for c in ["Starts", "Event", "City", "Country", "Key topics", "CFP / details", "Info & sign-up"] if c in view]],
                      hide_index=True, width="stretch",
-                     column_config={"Starts": st.column_config.DateColumn(format="MMM D, YYYY")})
+                     column_config={"Starts": st.column_config.DateColumn(format="MMM D, YYYY"),
+                                    "Info & sign-up": st.column_config.LinkColumn("Info & sign-up", display_text="Open link")})
         st.caption(f"{len(upcoming_df)} upcoming event(s)")
 
 # ══════════════════════════════════════════════════════════════════════════════

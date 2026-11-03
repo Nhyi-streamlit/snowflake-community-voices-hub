@@ -6,7 +6,8 @@ from datetime import date, datetime, timezone
 import pandas as pd
 import streamlit as st
 
-PUBLIC_COLS = ["event_name", "event_city", "event_country", "event_start", "event_end", "event_format"]
+PUBLIC_COLS = ["event_name", "event_city", "event_country", "event_start", "event_end", "event_format",
+               "event_website", "community_alignment", "event_description"]
 _FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%b %d, %Y", "%B %d, %Y", "%b %d %Y")
 
 # Tests set OVERRIDE["events"] to a DataFrame shaped like the Events tab.
