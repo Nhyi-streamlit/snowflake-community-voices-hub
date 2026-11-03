@@ -24,7 +24,7 @@ def parse_date(value) -> date | None:
     return None
 
 
-@st.cache_data(ttl=600, max_entries=4, show_spinner=False)
+@st.cache_data(ttl=60, max_entries=4, show_spinner=False)
 def _approved_from_sheet() -> pd.DataFrame:
     from utils.sheets import read_tab
     return read_tab("Events")
