@@ -29,6 +29,12 @@ st.set_page_config(page_title="Speaker Portal — Community Voices", page_icon="
 inject_css()
 
 
+
+def _mask(value: str) -> str:
+    """Keep only the last 4 characters so account numbers never sit in the shared sheet."""
+    value = (value or "").strip()
+    return f"****{value[-4:]}" if len(value) > 4 else ("****" if value else "")
+
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -1115,7 +1121,8 @@ with show("travel"):
                 expenses_summary,
                 total_str,
                 rf_pay_method, paypal_val,
-                bank_name_val, bank_account_val, bank_routing_val,
+                # Bank details go to the admin email only; the shared sheet keeps a masked reference.
+                bank_name_val, _mask(bank_account_val), _mask(bank_routing_val),
                 rf_notes or "",
                 receipt_status,
                 "Pending Review",
