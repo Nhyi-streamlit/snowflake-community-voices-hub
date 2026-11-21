@@ -295,3 +295,35 @@ def test_speaker_portal_links_to_conference_form(section):
 
 def cf_url():
     return "https://app-superhero-creator-form-5rkbvp9kjmrkjjkqfbslqj.streamlit.app/"
+
+
+# ── Booking types (flight / hotel / ground) ──────────────────────────────────────────────────────────────────
+
+def test_needs_reads_support_choices_and_travel_mode():
+    row = form_row("x", "2026-11-04T20:33:23Z", "Tarun", "t@x.com", mode="Bus")
+    row["Other Support Needed"] = "Hotel / accommodation"
+    assert cf.needs(row) == ["Hotel", "Uber / ground"]
+    assert cf.needs(form_row("y", "t", "A", "a@x.com", mode="Flight")) == ["Flight"]
+    assert cf.needs(form_row("z", "t", "A", "a@x.com", mode="")) == []
+
+
+def test_aba_alert_shows_what_the_speaker_needs(env):
+    form, hub, gm = env
+    cf.check(baseline=True)
+    add_new(form)
+    cf.check(notify=True, base_url="https://hub")
+    body = gm.to(cf.ADMIN_EMAIL)[-1]["body"]
+    assert "Needs" in body and "Flight" in body
+
+
+def test_approve_with_selected_bookings_tells_navan_exactly_what_to_book(env):
+    form, hub, gm = env
+    cf.check(baseline=True)
+    k = add_new(form)
+    cf.check(notify=True, base_url="https://hub")
+    ok, _ = cf.decide(k, cf.APPROVED, cf.ADMIN_EMAIL, "Near venue", ["Hotel"])
+    assert ok
+    m = gm.to("alldavis@navan.com")[-1]
+    assert m["subject"].startswith("Hotel booking request (approved)")
+    assert "Please book" in m["body"] and "Check-in" in m["body"] and "Near venue" in m["body"]
+    assert "[Book:" not in m["body"]

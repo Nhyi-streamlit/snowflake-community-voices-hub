@@ -19,6 +19,8 @@ from utils import ops_store as ops
 TAB = "Conference_Approvals"
 SOURCE_SPREADSHEET_ID = "1zQlOQYBqyVn9pAFjNQCM0LZleq1VktUmqFbuRq3Je8c"   # not a secret; override with a secret
 SOURCE_TAB = "Filled Form"
+INTERNAL_TAB = "Internal Submissions"     # employee speakers, same spreadsheet
+BOOK_OPTIONS = ["Flight", "Hotel", "Uber / ground"]
 ADMIN_EMAIL = "aba.micah@snowflake.com"
 NAVAN_TO = ["alldavis@navan.com", "wbickmore@navan.com"]
 PENDING, APPROVED, DECLINED, BASELINE = "pending", "approved", "declined", "baseline"
@@ -34,7 +36,34 @@ COLS = {
     "depart": ["Departure Date"], "return": ["Return Date"], "from": ["Traveling From"], "to": ["Traveling To"],
     "notes": ["Notes", "Additional Notes"],
     "travel_mode": ["Preferred Travel Mode", "Preferred mode of travel", "Preferred Mode of Travel"],
+    "support": ["Other Support Needed", "Support Types", "Support Priority 1"],
+    "support2": ["Support Priority 2"], "support3": ["Support Priority 3"],
+    "support_details": ["Support Details"], "cost": ["Estimated Travel Cost (USD)"],
 }
+
+
+def needs(row: dict) -> list[str]:
+    """Which of Flight / Hotel / Uber-ground the speaker asked for, from support choices and travel mode."""
+    text = " ".join(_get(row, f) for f in ("support", "support2", "support3", "support_details", "travel_mode")).lower()
+    out = []
+    if "flight" in text or "airfare" in text or "plane" in text:
+        out.append("Flight")
+    if "hotel" in text or "accommodation" in text:
+        out.append("Hotel")
+    if any(w in text for w in ("ground", "uber", "bus", "train", "rail", "taxi")):
+        out.append("Uber / ground")
+    return out
+
+
+def _book_note(book: list[str], note: str) -> str:
+    return (f"[Book: {', '.join(book)}] " if book else "") + (note or "")
+
+
+def _split_note(stored: str) -> tuple[list[str], str]:
+    if stored.startswith("[Book: ") and "] " in stored:
+        head, rest = stored[7:].split("] ", 1)
+        return [b.strip() for b in head.split(",") if b.strip()], rest
+    return [], stored
 
 
 def _secret(name: str, default: str = "") -> str:
@@ -75,8 +104,14 @@ def source_rows() -> list[dict]:
         df = SHEETS_OVERRIDE["source"]()
     else:
         from utils.sheets import read_tab
-        df = read_tab(_secret("CONFERENCE_SOURCE_TAB", SOURCE_TAB),
-                      spreadsheet_id=_secret("CONFERENCE_SPREADSHEET_ID", SOURCE_SPREADSHEET_ID))
+        sid = _secret("CONFERENCE_SPREADSHEET_ID", SOURCE_SPREADSHEET_ID)
+        frames = [read_tab(_secret("CONFERENCE_SOURCE_TAB", SOURCE_TAB), spreadsheet_id=sid)]
+        try:
+            frames.append(read_tab(INTERNAL_TAB, spreadsheet_id=sid))
+        except Exception:
+            pass                                    # internal tab is optional
+        frames = [f for f in frames if f is not None and not f.empty]
+        df = pd.concat(frames, ignore_index=True) if frames else None
     if df is None or df.empty:
         return []
     out: dict[str, dict] = {}
@@ -120,8 +155,10 @@ def notify_email(row: dict, base_url: str) -> tuple[str, str]:
                       ("Conference", s["conference"]), ("Event link", _get(row, "event_link")),
                       ("Talk", _get(row, "talk")), ("Dates", s["dates"]),
                       ("Traveling from", _get(row, "from")), ("Traveling to", _get(row, "to")),
-                      ("Preferred mode of travel", _get(row, "travel_mode")), ("Notes", _get(row, "notes")),
-                      ("Submitted", s["submitted_at"])])
+                      ("Preferred mode of travel", _get(row, "travel_mode")),
+                      ("Needs", " · ".join(needs(row)) or "No travel booking requested"),
+                      ("Support details", _get(row, "support_details")), ("Est. cost (USD)", _get(row, "cost")),
+                      ("Notes", _get(row, "notes")), ("Submitted", s["submitted_at"])])
             + f"<p><a href='{_e(link)}'>Review and approve in Workflow admin</a></p>")
     return f"Conference support request: {s['name']} · {s['conference'] or 'event TBD'}", body
 
@@ -170,20 +207,26 @@ def check(notify: bool = True, baseline: bool = False, base_url: str = "", basel
 
 # ── Approve / decline / Navan ─────────────────────────────────────────────────────────────────────────────────
 
-def navan_email(row: dict, note: str = "") -> tuple[str, str]:
+def navan_email(row: dict, note: str = "", book: list[str] | None = None) -> tuple[str, str]:
     s = summary(row)
-    body = ("<p>Hi Navan team,</p><p>Please arrange travel for the Snowflake community speaker below. "
+    book = book if book is not None else needs(row)
+    what = ", ".join(b.lower() for b in book) or "travel"
+    body = (f"<p>Hi Navan team,</p><p>Please book <b>{_e(what)}</b> for the Snowflake community speaker below. "
             "This trip is approved by Snowflake Community Voices.</p>"
-            + _table([("Traveler", s["name"]), ("Traveler email", s["email"]), ("Conference", s["conference"]),
-                      ("Event link", _get(row, "event_link")), ("Departure date", _get(row, "depart")),
-                      ("Return date", _get(row, "return")), ("Location", _get(row, "to")),
+            + _table([("Please book", " · ".join(book) or "See notes"),
+                      ("Traveler", s["name"]), ("Traveler email", s["email"]), ("Conference", s["conference"]),
+                      ("Event link", _get(row, "event_link")),
+                      ("Departure date" if "Flight" in book or not book else "Check-in", _get(row, "depart")),
+                      ("Return date" if "Flight" in book or not book else "Check-out", _get(row, "return")),
+                      ("Location", _get(row, "to")),
                       ("Traveling from", _get(row, "from")),
                       ("Traveler home city", ", ".join(x for x in (_get(row, "city"), _get(row, "country")) if x)),
                       ("Preferred mode of travel", _get(row, "travel_mode")),
                       ("Traveler's travel notes", _get(row, "notes")), ("Note from Snowflake", note)])
             + f"<p>Questions? Reply to this email or contact {ADMIN_EMAIL}.</p><p>Thanks,<br>Aba Micah<br>"
               "Snowflake Community Voices</p>")
-    return f"Travel booking request (approved): {s['name']} · {s['conference'] or 'conference'}", body
+    tag = " + ".join(book) if book else "Travel"
+    return f"{tag} booking request (approved): {s['name']} · {s['conference'] or 'conference'}", body
 
 
 def _deliver_navan(key: str, note: str, to=None, cc=None):
@@ -191,10 +234,11 @@ def _deliver_navan(key: str, note: str, to=None, cc=None):
     if row is None:
         from utils.gmail_diag import SendResult
         return SendResult(False, "source_row_not_found")
-    return _send(to or NAVAN_TO, *navan_email(row, note), cc=cc)
+    book, text = _split_note(note or "")
+    return _send(to or NAVAN_TO, *navan_email(row, text, book or None), cc=cc)
 
 
-def decide(key: str, decision: str, actor_email: str, note: str = "") -> tuple[bool, str]:
+def decide(key: str, decision: str, actor_email: str, note: str = "", book: list[str] | None = None) -> tuple[bool, str]:
     """Approve (and send to Navan once) or decline. Returns (ok, message)."""
     t = tracked().get(key)
     if t is None:
@@ -207,7 +251,7 @@ def decide(key: str, decision: str, actor_email: str, note: str = "") -> tuple[b
         return True, f"Declined {t.get('name')}. Nothing was sent."
     if t.get("status") != APPROVED:
         ops.upsert(TAB, "key", key, {"status": APPROVED, "decided_by": actor_email, "decided_at": _now(),
-                                     "notes": note})
+                                     "notes": _book_note(book, note) if book is not None else note})
     return send_navan(key)
 
 
@@ -282,10 +326,19 @@ def render(actor) -> None:
             st.markdown(f"**{md(r['name'])}** · {md(r['email'])}")
             st.markdown(f"{md(r['conference']) or '_Event not named_'} · {md(r['dates']) or 'dates not given'} · "
                         f"submitted {md(r['submitted_at'])}")
+            src = source_row(k) or {}
+            asked = needs(src)
+            st.markdown(f"**Needs:** {' · '.join(asked) or 'no travel booking requested'} · "
+                        f"from {md(_get(src, 'from')) or '—'} to {md(_get(src, 'to')) or '—'} · "
+                        f"mode {md(_get(src, 'travel_mode')) or '—'}")
+            if _get(src, "support_details"):
+                st.caption(md(_get(src, "support_details")))
+            book = st.pills("Send to Navan to book", BOOK_OPTIONS, selection_mode="multi",
+                            default=asked, key=f"conf_book_{n}")
             note = st.text_input("Note (optional, included in the Navan email)", key=f"conf_note_{n}")
             act = st.container(horizontal=True)
             if act.button("Approve", type="primary", icon=":material/check:", key=f"conf_ok_{n}"):
-                flash(*decide(k, APPROVED, actor.email, note))
+                flash(*decide(k, APPROVED, actor.email, note, list(book or [])))
                 st.rerun()
             if act.button("Decline", icon=":material/close:", key=f"conf_no_{n}"):
                 flash(*decide(k, DECLINED, actor.email, note))
