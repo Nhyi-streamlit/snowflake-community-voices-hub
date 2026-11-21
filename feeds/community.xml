@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Snowflake Community Voices</title>
+    <link>https://nhyi-streamlit-snowflake-community-voices--streamlit-app-an16ay.streamlit.app/</link>
+    <description>Speaking opportunities and updates for Data Superheroes and Streamlit Creators.</description>
+    <language>en-us</language>
+    <item>
+      <title>Community Voices updates are now posted here</title>
+      <link>https://nhyi-streamlit-snowflake-community-voices--streamlit-app-an16ay.streamlit.app/</link>
+      <guid isPermaLink="false">cv-2026-11-21-welcome</guid>
+      <pubDate>Sat, 21 Nov 2026 18:00:00 GMT</pubDate>
+      <description>Speaking slots and program updates will show up in this channel. Find events and resources in the Speaker Hub.</description>
+    </item>
+  </channel>
+</rss>
