@@ -147,8 +147,48 @@ with show("start"):
 # ══════════════════════════════════════════════════════════════════════════════
 with show("speak"):
     gate("speak")
-    ui.coming_soon("Signing up for a speaking slot",
-                   "Soon you'll be able to raise your hand for an event right here.")
+    from utils import slots as _slots
+    st.markdown("### Open speaker slots")
+    st.caption("A partner has a confirmed spot and needs a speaker. Claim one and Aba will confirm within 2 business days.")
+    slot_df = public_events.speaker_slots()
+    if slot_df is None:
+        st.info("We couldn't load slots right now. Please try again in a few minutes.", icon=":material/cloud_off:")
+    elif slot_df.empty:
+        st.info("No open slots right now. Check back soon, or browse the CFP invitations below.",
+                icon=":material/event_upcoming:")
+    for s in ([] if slot_df is None else slot_df.to_dict("records")):
+        eid = s.get("event_id", "")
+        taken = s.get("slot_status") == public_events.PENDING_REVIEW
+        with st.container(border=True):
+            st.markdown(f"**{md(s['event_name'])}** · {md(s['event_city'])}, {md(s.get('event_country', ''))} · "
+                        f"{s['start']:%a, %b %-d, %Y}")
+            if s.get("event_description"):
+                st.caption(md(s["event_description"]))
+            done = st.session_state.get(f"slot_done_{eid}")
+            if done:
+                st.success(md(done), icon=":material/check_circle:")
+                continue
+            open_key = f"slot_open_{eid}"
+            if not st.session_state.get(open_key):
+                if taken:
+                    st.caption("Already claimed. You can join the waitlist in case it opens up.")
+                st.button("Join the waitlist" if taken else "Claim this slot", key=f"slot_btn_{eid}",
+                          type="secondary" if taken else "primary",
+                          on_click=lambda k=open_key: st.session_state.update({k: True}))
+                continue
+            with st.form(f"slot_form_{eid}"):
+                c1, c2 = st.columns(2)
+                nm = c1.text_input("Your name")
+                em = c2.text_input("Your email", value=speaker_identity.email if speaker_identity else "")
+                tt = st.text_input("Talk title")
+                ab = st.text_area("Short abstract (2–3 lines)", height=90)
+                tv = st.multiselect("Need travel support?", _slots.TRAVEL_OPTIONS, placeholder="None")
+                if st.form_submit_button("Join the waitlist" if taken else "Claim this slot", type="primary"):
+                    ok, msg = _slots.claim(eid, nm, em, tt, ab, tv)
+                    if ok:
+                        st.session_state[f"slot_done_{eid}"] = msg
+                        st.rerun()
+                    st.error(md(msg))
     raise SectionDone       # legacy slot signup below is kept but paused
     st.markdown("### Available speaking slots")
     st.markdown("Events confirmed and actively seeking Snowflake community speakers. Sign up directly below.")
@@ -317,23 +357,24 @@ with show("speak"):
 # ══════════════════════════════════════════════════════════════════════════════
 with show("speak"):
     gate("speak")
-    st.markdown("### Upcoming events")
-    st.caption("Approved Community Voices events from today onwards.")
-    upcoming_df = public_events.upcoming()
+    st.markdown("### CFP invitations")
+    st.caption("Conferences inviting talk proposals. Apply on the event site before the deadline, then tell Aba if you're accepted.")
+    upcoming_df = public_events.cfp_invitations()
     if upcoming_df is None:
         st.info("We couldn't load events right now. Please try again in a few minutes.", icon=":material/cloud_off:")
     elif upcoming_df.empty:
-        st.info("No upcoming events yet — check back soon.", icon=":material/event_upcoming:")
+        st.info("No open CFPs right now — check back soon.", icon=":material/event_upcoming:")
     else:
         view = upcoming_df.rename(columns={"event_name": "Event", "event_city": "City", "event_country": "Country",
-                                           "start": "Starts", "event_format": "Format",
-                                          "community_alignment": "Key topics", "event_description": "CFP / details",
-                                          "event_website": "Info & sign-up"})
-        st.dataframe(view[[c for c in ["Starts", "Event", "City", "Country", "Key topics", "CFP / details", "Info & sign-up"] if c in view]],
+                                           "start": "Starts", "cfp_deadline": "CFP deadline",
+                                           "community_alignment": "Key topics", "event_website": "Apply on the event site"})
+        st.dataframe(view[[c for c in ["Starts", "Event", "City", "Country", "CFP deadline", "Key topics",
+                                       "Apply on the event site"] if c in view]],
                      hide_index=True, width="stretch",
                      column_config={"Starts": st.column_config.DateColumn(format="MMM D, YYYY"),
-                                    "Info & sign-up": st.column_config.LinkColumn("Info & sign-up", display_text="Open link")})
-        st.caption(f"{len(upcoming_df)} upcoming event(s)")
+                                    "Apply on the event site": st.column_config.LinkColumn("Apply on the event site",
+                                                                                           display_text="Apply")})
+        st.caption(f"{len(upcoming_df)} open CFP(s)")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB: RESOURCES

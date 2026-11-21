@@ -19,6 +19,9 @@ HEADERS = {
                              "decided_by", "decided_at", "navan_sent_at", "notes"],
     "Program_Feedback": ["feedback_id", "submitted_at", "name", "email", "community", "event", "topic", "rating",
                          "went_well", "improve", "follow_up_ok"],
+    "Slot_Claims": ["key", "event_id", "event_name", "event_date", "event_city", "name", "email", "talk_title",
+                    "abstract", "travel", "submitted_at", "status", "notified_at", "decided_by", "decided_at",
+                    "speaker_notified_at", "notes"],
 }
 
 DRAFT, APPROVED, SENT, DISCARDED = "Draft", "Approved", "Sent", "Discarded"

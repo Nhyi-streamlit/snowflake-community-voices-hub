@@ -88,18 +88,21 @@ def read_tab_raw(tab: str) -> list:
 
 # ── Append ─────────────────────────────────────────────────────────────────────
 
-def append_row(tab: str, row: list) -> bool:
-    """Append a single row to the given sheet tab. Returns True on success."""
+def append_row(tab: str, row: list, spreadsheet_id: str | None = None, value_input: str = "RAW") -> bool:
+    """Append a single row to the given sheet tab. Returns True on success.
+
+    `spreadsheet_id` appends to another spreadsheet the same Google account can edit (default: the hub sheet);
+    value_input="USER_ENTERED" lets that sheet parse dates."""
     s = _secrets()
     if not all([s["GOOGLE_REFRESH_TOKEN"], s["GOOGLE_CLIENT_ID"],
-                s["GOOGLE_CLIENT_SECRET"], s["GOOGLE_SPREADSHEET_ID"]]):
+                s["GOOGLE_CLIENT_SECRET"], spreadsheet_id or s["GOOGLE_SPREADSHEET_ID"]]):
         return False
     try:
         token = get_access_token()
         resp = requests.post(
-            f"https://sheets.googleapis.com/v4/spreadsheets/{s['GOOGLE_SPREADSHEET_ID']}"
+            f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id or s['GOOGLE_SPREADSHEET_ID']}"
             f"/values/{requests.utils.quote(tab)}!A1:append",
-            params={"valueInputOption": "RAW", "insertDataOption": "INSERT_ROWS"},
+            params={"valueInputOption": value_input, "insertDataOption": "INSERT_ROWS"},
             json={"values": [row]},
             headers={"Authorization": f"Bearer {token}"},
             timeout=15,
