@@ -178,3 +178,14 @@ def test_portal_shows_two_lists_and_claim_form_submits(env):
     assert not at.exception, at.exception
     assert any("2 business days" in s.value for s in at.success)
     assert status(events, "AUS") == pe.PENDING_REVIEW and gm.sent[-1]["to"] == ABA
+
+
+def test_short_sheet_rows_with_blank_cells_render(env):
+    events, _, _ = env
+    events.df.loc[events.df["event_id"] == "AUS", ["event_description", "event_country", "cfp_deadline"]] = None
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_file("pages/1_Speaker_Portal.py", default_timeout=30)
+    at.query_params["section"] = "speak"
+    at.run()
+    assert not at.exception, at.exception
+    assert "AI Camp Austin" in " ".join(m.value for m in at.markdown)

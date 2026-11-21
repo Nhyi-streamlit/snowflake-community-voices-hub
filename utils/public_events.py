@@ -41,6 +41,7 @@ def upcoming(limit: int | None = None, today: date | None = None) -> pd.DataFram
         return None
     if raw is None or raw.empty or "status" not in raw:
         return pd.DataFrame(columns=PUBLIC_COLS + ["start"])
+    raw = raw.fillna("")                    # short sheet rows leave trailing cells as NaN
     df = raw.loc[raw["status"].astype(str).str.strip().eq("Approved"),
                  [c for c in PUBLIC_COLS if c in raw]].copy()
     df["start"] = df["event_start"].map(parse_date) if "event_start" in df else None
