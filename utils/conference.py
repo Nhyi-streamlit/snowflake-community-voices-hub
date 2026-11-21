@@ -303,6 +303,11 @@ def render(actor) -> None:
         st.rerun()
 
     rows = list(tracked().values())
+    try:                                     # one read per page load; a failed read must not break approvals
+        by_key = {key_of(r): r for r in source_rows()}
+    except Exception:
+        by_key = {}
+        st.warning("Couldn't read the form sheet just now, so travel details are hidden. You can still approve.")
     pending = [r for r in rows if r.get("status") == PENDING]
     unsent = [r for r in rows if r.get("status") == APPROVED and not r.get("navan_sent_at")]
     st.caption("Approving emails Navan once (cc you). Declining records the decision and sends nothing.")
@@ -326,7 +331,7 @@ def render(actor) -> None:
             st.markdown(f"**{md(r['name'])}** · {md(r['email'])}")
             st.markdown(f"{md(r['conference']) or '_Event not named_'} · {md(r['dates']) or 'dates not given'} · "
                         f"submitted {md(r['submitted_at'])}")
-            src = source_row(k) or {}
+            src = by_key.get(k, {})
             asked = needs(src)
             st.markdown(f"**Needs:** {' · '.join(asked) or 'no travel booking requested'} · "
                         f"from {md(_get(src, 'from')) or '—'} to {md(_get(src, 'to')) or '—'} · "
