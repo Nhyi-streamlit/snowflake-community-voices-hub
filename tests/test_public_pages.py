@@ -93,7 +93,7 @@ def test_program_team_url_still_gated():
 
 # ── Speaker Portal ──────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("section", ["start", "speak", "resources", "travel", "after"])
+@pytest.mark.parametrize("section", ["speak", "resources", "travel", "after"])
 def test_speaker_portal_renders_signed_out_in_every_section(section):
     at = run("pages/1_Speaker_Portal.py", query={"section": section})
     assert at.radio(key="spk_section").value == section
@@ -106,6 +106,7 @@ def test_speaker_portal_renders_signed_out_in_every_section(section):
         assert at.text_input(key="qr_name") is not None                  # QR generator is public
         assert at.text_input(key="spk_email_input") is not None      # headcount needs sign-in
     if section == "speak":
+        assert any(h.value == "How it works" for h in at.subheader)     # Get started is on this tab
         shown = at.dataframe[0].value
         assert list(shown["Event"].str.startswith("Data Summit")) == [True]   # approved + upcoming only
 
@@ -158,3 +159,8 @@ def test_speaker_email_entry_unlocks_forms_without_sending_a_code(monkeypatch):
     assert at.session_state["spk_email"] == "ada@example.com"
     keys = [t.key for t in at.text_input]
     assert "exp_name" in keys and "spk_email_input" not in keys
+
+
+def test_old_start_link_opens_combined_tab():
+    at = run("pages/1_Speaker_Portal.py", query={"section": "start"})
+    assert at.radio(key="spk_section").value == "speak" and not at.exception

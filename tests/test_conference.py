@@ -282,7 +282,7 @@ def test_admin_decline_sends_nothing(env, clean_admin):
 
 # ── Speaker Portal links ─────────────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("section", ["start", "travel"])
+@pytest.mark.parametrize("section", ["speak", "travel"])
 def test_speaker_portal_links_to_conference_form(section):
     at = AppTest.from_file("pages/1_Speaker_Portal.py", default_timeout=30)
     at.query_params["section"] = section

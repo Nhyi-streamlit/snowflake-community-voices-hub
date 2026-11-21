@@ -57,8 +57,7 @@ _audience_mode = bool(_speaker_param and _event_param and _talk_param)
 SLOTS_SHEET_ID = "1IgTYK8vV-AhDI3HuYB3KEjN8knRjY66LAOIWF0QT5II"
 
 SECTIONS = {
-    "start": ":material/waving_hand: Get started",
-    "speak": ":material/event: Speak at an event",
+    "speak": ":material/event: Get started & speak",
     "resources": ":material/inventory_2: Resources",
     "travel": ":material/flight: Travel & expenses",
     "after": ":material/star: After your talk",
@@ -73,8 +72,9 @@ if _audience_mode:
     active = "feedback"              # audience QR link: only the rating form
 else:
     if "spk_section" not in st.session_state:
-        q = params.get("section", "start")
-        st.session_state["spk_section"] = q if q in SECTIONS else "start"
+        q = params.get("section", "speak")
+        q = "speak" if q == "start" else q          # old ?section=start links land on the combined tab
+        st.session_state["spk_section"] = q if q in SECTIONS else "speak"
     ui.hero("Speaker Portal", "Your Community Voices home",
             "Find an event, get your talk ready, and hear what your audience thought — all in one place.",
             theme="sky")
@@ -124,10 +124,10 @@ def require_sign_in(what: str):
 # ══════════════════════════════════════════════════════════════════════════════
 # GET STARTED
 # ══════════════════════════════════════════════════════════════════════════════
-with show("start"):
-    gate("start")
+with show("speak"):
+    gate("speak")
     st.subheader("How it works")
-    ui.step_cards([("Pick an event", "See approved events looking for community speakers under **Speak at an event**."),
+    ui.step_cards([("Pick an event", "See approved events looking for community speakers below."),
                    ("Get ready", "Use the brand kit, talk templates, and prep checklist under **Resources**."),
                    ("Speak & share", "Show your feedback QR code, then log attendance under **After your talk**.")])
     with st.container(border=True):
