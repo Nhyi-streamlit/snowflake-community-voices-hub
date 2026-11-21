@@ -104,7 +104,8 @@ def main(argv=None) -> int:
         if any(r.get("recap_id") == f"recap-{start.isoformat()}" and "dm:failed" not in r.get("send_result", "")
                for r in ops.records("Recaps")):
             return 0
-    tabs = rp.load_tabs(read_tab)
+    from utils.slots import PROGRAM_SPREADSHEET_ID
+    tabs = rp.load_tabs(read_tab, lambda t: read_tab(t, spreadsheet_id=PROGRAM_SPREADSHEET_ID))
     summary = rc.summarize(tabs, start, end)
 
     if not args.publish_draft:

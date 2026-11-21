@@ -114,16 +114,17 @@ def append_row(tab: str, row: list, spreadsheet_id: str | None = None, value_inp
 
 # ── Update (single cell or row) ───────────────────────────────────────────────
 
-def update_cell(tab: str, sheet_row: int, col_letter: str, value: str) -> bool:
-    """Update a single cell. sheet_row is 1-based (row 1 = header)."""
+def update_cell(tab: str, sheet_row: int, col_letter: str, value: str, spreadsheet_id: str | None = None,
+                value_input: str = "RAW") -> bool:
+    """Update a single cell. sheet_row is 1-based (row 1 = header). `spreadsheet_id` defaults to the hub sheet."""
     s = _secrets()
     try:
         token = get_access_token()
         cell = f"{tab}!{col_letter}{sheet_row}"
         resp = requests.put(
-            f"https://sheets.googleapis.com/v4/spreadsheets/{s['GOOGLE_SPREADSHEET_ID']}"
+            f"https://sheets.googleapis.com/v4/spreadsheets/{spreadsheet_id or s['GOOGLE_SPREADSHEET_ID']}"
             f"/values/{requests.utils.quote(cell)}",
-            params={"valueInputOption": "RAW"},
+            params={"valueInputOption": value_input},
             json={"values": [[value]]},
             headers={"Authorization": f"Bearer {token}"},
             timeout=15,

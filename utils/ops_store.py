@@ -22,6 +22,10 @@ HEADERS = {
     "Slot_Claims": ["key", "event_id", "event_name", "event_date", "event_city", "name", "email", "talk_title",
                     "abstract", "travel", "submitted_at", "status", "notified_at", "decided_by", "decided_at",
                     "speaker_notified_at", "notes"],
+    "Speaker_Updates": ["key", "kind", "name", "email", "event_name", "event_date", "city", "link", "talk_title",
+                        "partner", "cfp_deadline", "status", "submitted_at", "updated_at", "decided_at", "se_id",
+                        "sync_note"],
+    "Needs_Review": ["key", "found_at", "source", "detail", "reason", "status"],
 }
 
 DRAFT, APPROVED, SENT, DISCARDED = "Draft", "Approved", "Sent", "Discarded"

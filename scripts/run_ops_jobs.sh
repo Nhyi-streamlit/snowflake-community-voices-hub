@@ -10,6 +10,8 @@ LOG="logs/ops-$(date +%Y-%m-%d).log"
 PY="${CV_PYTHON:-/usr/local/bin/python3}"
 {
   echo "=== $(date -u +%FT%TZ) ==="
+  # Feedback, headcount, partner metrics and speaker updates -> program sheet Speaker-Events (fills blanks only).
+  "$PY" scripts/program_rollup.py --write
   "$PY" scripts/weekly_recap.py --publish-draft --scheduled
   "$PY" scripts/triage_ai.py --write
   # Idempotent: each reminder is recorded once per item and offset day; AI reviews only new versions.

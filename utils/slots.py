@@ -295,6 +295,15 @@ class SheetProgram:
         from utils.sheets import append_row
         return append_row(tab, row, spreadsheet_id=PROGRAM_SPREADSHEET_ID, value_input="USER_ENTERED")
 
+    def set(self, tab: str, sheet_row: int, column: str, value: str) -> bool:
+        """One cell by header name; sheet_row is 1-based (row 2 = first data row)."""
+        from utils.sheets import read_tab, update_cell
+        cols = list(read_tab(tab, spreadsheet_id=PROGRAM_SPREADSHEET_ID).columns)
+        i = cols.index(column)
+        letter = (chr(64 + i // 26) if i >= 26 else "") + chr(65 + i % 26)
+        return update_cell(tab, sheet_row, letter, value, spreadsheet_id=PROGRAM_SPREADSHEET_ID,
+                           value_input="USER_ENTERED")
+
 
 class MemoryProgram:
     def __init__(self, tabs: dict[str, pd.DataFrame]):
@@ -306,6 +315,13 @@ class MemoryProgram:
     def append(self, tab, row):
         df = self.tabs[tab]
         df.loc[len(df)] = ([("" if v is None else str(v)) for v in row] + [""] * len(df.columns))[:len(df.columns)]
+        return True
+
+    def set(self, tab, sheet_row, column, value):
+        df = self.tabs[tab]
+        if column not in df.columns:
+            df[column] = ""
+        df.loc[sheet_row - 2, column] = str(value)
         return True
 
 

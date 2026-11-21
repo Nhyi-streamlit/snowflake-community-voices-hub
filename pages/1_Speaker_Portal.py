@@ -1252,6 +1252,59 @@ def _hc_preview(data: bytes, boxes: list) -> bytes:
 
 with show("after"):
     gate("after")
+    from utils import activity as act
+    st.subheader("Share an update")
+    st.caption("Tell us where you're speaking or which CFPs you've sent. Reporting the same talk again updates it.")
+    require_sign_in("share an update")
+    me = speaker_identity.email.strip().lower()
+    choice = st.radio("What's new?", list(act.CHOICES), key="upd_kind", horizontal=True)
+    kind = act.CHOICES[choice]
+    if kind == act.SPEAKING:
+        with st.form("upd_talk", clear_on_submit=True):
+            u_event = st.text_input("Event *")
+            u_date = st.date_input("Date *", value=None, format="YYYY-MM-DD")
+            u_city = st.text_input("City")
+            u_title = st.text_input("Talk title")
+            u_link = st.text_input("Event link")
+            u_name = st.text_input("Your name")
+            go = st.form_submit_button("Save", type="primary")
+        if go:
+            ok, msg = act.report_talk(name=u_name, email=me, event=u_event, date=u_date.isoformat() if u_date else "",
+                                      city=u_city, link=u_link, talk_title=u_title)
+            (st.success if ok else st.error)(msg)
+    elif kind == act.CFP:
+        with st.form("upd_cfp", clear_on_submit=True):
+            u_conf = st.text_input("Conference *")
+            u_title = st.text_input("Talk title")
+            u_link = st.text_input("CFP link")
+            u_deadline = st.date_input("CFP deadline", value=None, format="YYYY-MM-DD")
+            u_name = st.text_input("Your name")
+            go = st.form_submit_button("Save", type="primary")
+        if go:
+            ok, msg = act.report_cfp(name=u_name, email=me, conference=u_conf, cfp_link=u_link, talk_title=u_title,
+                                     deadline=u_deadline.isoformat() if u_deadline else "")
+            (st.success if ok else st.error)(msg)
+    else:
+        mine = [r for r in act.my_cfps(me) if r.get("status") == act.SUBMITTED]
+        if not mine:
+            st.info("No submitted CFPs under your email yet. Choose \"I submitted a CFP\" first.", icon=":material/info:")
+        else:
+            with st.form("upd_result"):
+                pick = st.selectbox("Which CFP?", mine, format_func=lambda r: f"{r['event_name']}"
+                                    + (f" · {r['talk_title']}" if r.get("talk_title") else ""))
+                result = st.radio("Result", [act.ACCEPTED, act.DECLINED], horizontal=True)
+                c1, c2 = st.columns(2)
+                u_date = c1.date_input("Talk date (if accepted)", value=None, format="YYYY-MM-DD")
+                u_city = c2.text_input("City (if accepted)")
+                go = st.form_submit_button("Save", type="primary")
+            if go:
+                ok, msg = act.cfp_result(pick["key"], me, result, event_date=u_date.isoformat() if u_date else "",
+                                         city=u_city)
+                (st.success if ok else st.error)(msg)
+
+with show("after"):
+    gate("after")
+    st.divider()
     from utils import program_feedback
     program_feedback.render()
 

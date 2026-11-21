@@ -43,31 +43,57 @@ def ev(eid, status="Pending", name="Data Summit", start="2026-11-20", city="Lago
 
 
 def sheet_tabs(**extra):
+    """Fixed sample week Oct 5–11, 2026 (recap runs Mon Oct 12)."""
     events = pd.DataFrame([
-        ev("EV-1"),
+        ev("EV-1"),                                                                       # vendor event, this week
         ev("EV-2", name="Tiny Meetup <b>", aud="12", start="2026-10-14", desc="general networking"),
-        ev("EV-3", name="Data Summit", start="2026-11-20", city="Lagos", sub="2026-10-08"),   # duplicate of EV-1
-        ev("EV-4", status="Approved", name="Iceberg Day", start="2026-10-15", city="Accra", sub="2026-09-01"),
+        ev("EV-3", name="Data Summit", start="2026-11-20", city="Lagos", sub="2026-10-08"),
+        ev("EV-4", status="Approved", name="Iceberg Day", start="2026-10-15", city="Accra", sub="2026-10-06"),  # OSS
         ev("EV-5", status="Approved", name="Old Conf", start="2026-09-01", sub="2026-08-01"),
     ], columns=EV_COLS)
+    events["opportunity_type"], events["slot_status"] = "", ""
+    slot = ev("SL-1", status="Approved", name="AI Camp Austin", start="2026-10-28", city="Austin", sub="2026-09-01")
+    slot2 = ev("SL-2", status="Approved", name="AI Camp Miami", start="2026-10-30", city="Miami", sub="2026-09-01")
+    events = pd.concat([events, pd.DataFrame([{**slot, "opportunity_type": "Speaker slot", "slot_status": "Open"},
+                                              {**slot2, "opportunity_type": "Speaker slot", "slot_status": "Pending review"}])],
+                       ignore_index=True)
+    se_cols = ["SE ID", "Speaker", "Event", "Date", "City", "Stage", "Attended", "Survey Responses", "Avg Rating (1-5)"]
+    se = pd.DataFrame([
+        ["SE-1", "Kofi *Mensah*", "Streams <101> Day", "2026-10-07", "Accra", "Delivered", "140", "4", "4.25"],
+        ["SE-2", "Ada Obi", "ODSC Lagos", "2026-10-09", "Lagos", "Delivered", "", "0", ""],      # attendance missing
+        ["SE-3", "Joyce Avila", "AI Camp NYC", "2026-10-08", "New York", "Confirmed", "", "", ""],  # not marked delivered
+        ["SE-4", "Keith Belanger", "Polaris Summit", "2026-10-08", "Boston", "Delivered", "50", "", ""],  # OSS, left out
+        ["SE-5", "Mandeep Singh", "AI Camp Austin", "2026-10-20", "Austin", "Confirmed", "", "", ""],  # coming up
+        ["SE-6", "Old Talk", "Way Later", "2026-11-30", "Paris", "Confirmed", "", "", ""],           # > 2 weeks out
+        ["SE-7", "Canceled Talk", "AI Camp Dallas", "2026-10-07", "Dallas", "Canceled", "", "", ""],
+    ], columns=se_cols)
+    claims = pd.DataFrame([
+        {"key": "k1", "event_name": "AI Camp Austin", "name": "Mandeep Singh", "submitted_at": "2026-10-06 10:00:00 UTC",
+         "status": "accepted", "decided_at": "2026-10-08 10:00:00 UTC", "email": "m@x.com"},
+        {"key": "k2", "event_name": "AI Camp Miami", "name": "Riya K", "submitted_at": "2026-10-10 10:00:00 UTC",
+         "status": "pending", "decided_at": "", "email": "r@x.com"},
+        {"key": "k3", "event_name": "AI Camp Austin", "name": "Late", "submitted_at": "2026-09-01", "status": "declined",
+         "decided_at": "2026-10-07", "email": "l@x.com"}])
+    upd = pd.DataFrame([
+        {"key": "u1", "kind": "cfp", "name": "Tarun Jain", "event_name": "PyCon FR", "status": "Submitted",
+         "submitted_at": "2026-10-06 09:00:00 UTC", "decided_at": "", "email": "t@x.com"},
+        {"key": "u2", "kind": "cfp", "name": "Ruchi Soni", "event_name": "DevFest", "status": "Accepted",
+         "submitted_at": "2026-09-20 09:00:00 UTC", "decided_at": "2026-10-09 09:00:00 UTC", "email": "ru@x.com"},
+        {"key": "u3", "kind": "speaking", "name": "Ada Obi", "event_name": "ODSC Lagos", "status": "Confirmed",
+         "submitted_at": "2026-10-05 09:00:00 UTC", "decided_at": "", "email": "a@x.com"}])
     reqs = pd.DataFrame([
         {"request_id": "R1", "submitted_at": "2026-10-07", "status": "Pending", "event_id": "EV-1",
          "event_name": "Data Summit", "speaker_topic": "Building AI apps", "cfp_deadline": "2026-10-20"},
         {"request_id": "R2", "submitted_at": "2026-10-09", "status": "Pending", "event_id": "EV-2",
          "event_name": "Tiny Meetup", "speaker_topic": "", "cfp_deadline": ""},
     ])
-    fb = pd.DataFrame([{"submission_id": str(i), "submitted_at": f"2026-10-0{6 + i % 3} 12:00:00",
-                        "speaker_name": "Kofi *Mensah*", "event_name": "Iceberg Day", "talk_title": "Streams <101>",
-                        "talk_date": "", "rating_overall": str(r)} for i, r in enumerate([5, 4, 5, 3])])
-    hc = pd.DataFrame([["2026-10-09 18:00:00", "spk@example.com", "Iceberg Day", "2026-10-09", "Accra", 3, 150,
-                        140, 300, 140, ""]], columns=["saved_at", "email", "event_name", "event_date", "city",
-                                                       "photos", "detected", "peak", "sum", "reported", "detail"])
     rb = pd.DataFrame([["RB1", "2026-10-08 10:00:00", "Kofi", "kofi@example.com", "Iceberg Day", "Accra", "", "",
-                        "$420.50", "Bank", "", "SECRET BANK", "SECRET-ACCT-123", "SECRET-ROUTING", "", "", "Pending Review", ""]],
+                        "$420.50", "Bank", "", "SECRET BANK", "SECRET-ACCT-123", "SECRET-ROUTING", "", "",
+                        "Pending Review", ""]],
                       columns=["reimb_id", "submitted_at", "name", "email", "event", "city", "date", "items",
                                "total_usd", "pay_method", "paypal", "bank_name", "bank_account", "bank_routing",
                                "notes", "receipts", "status", "links"])
-    tabs = {"Events": events, "Speaker_Requests": reqs, "Talk_Feedback": fb, "Event_Headcount": hc,
+    tabs = {"Events": events, "Speaker_Requests": reqs, "Slot_Claims": claims, "Speaker_Updates": upd, "Speaker-Events": se,
             "Reimbursements": rb}
     tabs.update(extra)
     return tabs
@@ -108,8 +134,8 @@ def test_week_bounds_is_previous_monday_to_sunday():
     assert rc.week_bounds(date(2026, 10, 14)) == WEEK
 
 
-def test_amounts_parse_with_currency_text():
-    assert rc._num("$1,420.50 USD") == 1420.5 and rc._num("4") == 4 and rc._num("") is None
+def test_amounts_parse_with_number_text():
+    assert rc._num("1,420.50") == 1420.5 and rc._num("4") == 4 and rc._num("") is None
 
 
 def test_scheduled_recap_runs_once_per_week(mem, monkeypatch):
@@ -117,41 +143,71 @@ def test_scheduled_recap_runs_once_per_week(mem, monkeypatch):
     calls = []
     monkeypatch.setattr("utils.recap_publish.publish_draft", lambda *a, **k: calls.append(1) or rp.Outcome(True, "ok"))
     monkeypatch.setattr(weekly_recap, "secret", lambda path, default="": "x")
-    monkeypatch.setattr("utils.sheets.read_tab", lambda tab: sheet_tabs()[tab])     # no network
+    monkeypatch.setattr("utils.sheets.read_tab", lambda tab, spreadsheet_id=None: sheet_tabs()[tab])   # no network
     assert weekly_recap.main(["--publish-draft", "--scheduled", "--today", "2026-10-13"]) == 0 and calls == [1]
     ops.upsert("Recaps", "recap_id", "recap-2026-10-05", {"status": ops.DRAFT})   # this week now has a recap
     assert weekly_recap.main(["--publish-draft", "--scheduled", "--today", "2026-10-13"]) == 0 and calls == [1]
 
 
-def test_recap_numbers_highlights_pending_and_next_week():
+def test_recap_sections_count_from_sample_data():
     s = rc.summarize(sheet_tabs(), *WEEK)
-    assert s.numbers["new_events"] == 3 and s.numbers["ratings"] == 4 and s.numbers["avg_rating"] == 4.25
-    assert s.numbers["attendance"] == 140 and s.numbers["reimbursements_submitted"] == 1
-    assert s.top_talks == [("Streams <101>", "Kofi *Mensah*", "Iceberg Day", 4.25, 4)]
-    assert s.biggest_events == [("Iceberg Day", "Accra", 140)]
-    assert s.pending == {"events_awaiting_review": 3, "reimbursements_open": 1, "reimbursements_open_usd": 420.5}
-    assert [n for _, n, _ in s.next_week] == ["Iceberg Day"]
+    assert [(t.speaker, t.event, t.attendance, t.rating) for t in s.delivered] == [
+        ("Kofi *Mensah*", "Streams <101> Day", "140", "4.25/5 (4)"), ("Ada Obi", "ODSC Lagos", "[confirm]", "")]
+    assert [t.speaker for t in s.coming_up] == ["Mandeep Singh"]
+    assert {k: len(v) for k, v in s.new.items()} == {
+        "talks_reported": 1, "slot_claims": 2, "slots_accepted": 1, "slots_declined": 1,
+        "cfps_submitted": 1, "cfps_accepted": 1, "vendor_events": 3}          # EV-1..3; Iceberg Day left out
+    assert s.open_slots == [(date(2026, 10, 28), "AI Camp Austin", "Austin")] and s.pending_slots == 1
+    assert s.gaps == ["Attendance missing: Ada Obi · ODSC Lagos (Oct 09)",
+                      "Not marked delivered: Joyce Avila · AI Camp NYC (Oct 08, Stage: Confirmed)"]
 
 
-def test_recap_never_includes_payment_or_contact_details():
+def test_recap_leaves_out_open_source_events():
     s = rc.summarize(sheet_tabs(), *WEEK)
     for out in (rc.to_slack(s), rc.to_html(s)):
-        assert "SECRET" not in out and "kofi@example.com" not in out and "org@eventco" not in out
+        assert "Polaris Summit" not in out and "Iceberg Day" not in out
 
 
-def test_recap_escapes_sheet_text():
+def test_recap_has_no_financials_or_contact_details():
     s = rc.summarize(sheet_tabs(), *WEEK)
-    assert "Streams &lt;101&gt;" in rc.to_slack(s) and "<101>" not in rc.to_slack(s)
+    for out in (rc.to_slack(s), rc.to_html(s)):
+        assert "$" not in out and "420" not in out and "SECRET" not in out and "eimburse" not in out
+        assert "@x.com" not in out and "kofi@example.com" not in out and "org@eventco" not in out
+
+
+def test_recap_slack_style_and_escaping():
+    s = rc.summarize(sheet_tabs(), *WEEK)
+    txt = rc.to_slack(s, "https://docs.google.com/document/d/abc/edit")
+    assert txt.startswith("Hi <!here>! Sharing this week's Community Voices recap")
+    assert txt.rstrip().endswith("Thank you to all our speakers!") and "Full recap (Google Doc)" in txt
+    assert "Streams &lt;101&gt;" in txt and "<101>" not in txt
     assert "Streams &lt;101&gt;" in rc.to_html(s) and "<101>" not in rc.to_html(s)
 
 
 def test_empty_week_and_missing_tab_still_draft():
-    tabs = {k: pd.DataFrame() for k in rp.SOURCE_TABS}
-    tabs["Event_Headcount"] = None
+    tabs = {k: pd.DataFrame() for k in rp.SOURCE_TABS + rp.PROGRAM_TABS}
+    tabs["Speaker-Events"] = None
     s = rc.summarize(tabs, *WEEK)
-    txt = rc.to_slack(s)
-    assert "No activity recorded" in txt and "Couldn't read: Event\\_Headcount" not in txt
-    assert "Event_Headcount" in s.sources_missing
+    assert "None marked delivered this week" in rc.to_slack(s)
+    assert s.sources_missing == ["Speaker-Events"]
+
+
+def test_load_tabs_reads_program_sheet_separately():
+    hub = lambda t: sheet_tabs()[t]   # noqa: E731
+    tabs = rp.load_tabs(hub, lambda t: sheet_tabs()[t])
+    assert set(tabs) == {"Events", "Slot_Claims", "Speaker_Updates", "Speaker-Events"}
+    assert rp.load_tabs(hub)["Speaker-Events"] is None
+
+
+def test_recap_stays_draft_and_nothing_posts_without_approval(mem):
+    slack = FakeChannel()
+    rp.publish_draft(sheet_tabs(), TODAY, make_doc=Docs(), slack=slack, dm_user="U_ABA")
+    rp.publish_draft(sheet_tabs(), TODAY + timedelta(days=2), make_doc=Docs(), slack=slack, dm_user="U_ABA")
+    rec = ops.records("Recaps")
+    assert len(rec) == 1 and rec[0]["status"] == ops.DRAFT and not rec[0]["sent_at"] and not rec[0]["approved_by"]
+    assert [a for a, *_ in slack.sent] == ["U_ABA"]                       # only the reminder DM to Aba
+    assert "slack:ok" not in rec[0]["send_result"]
+    assert rec[0]["slack_text"].startswith("Hi <!here>!")
 
 
 def test_publish_draft_creates_doc_row_and_dm_only_to_aba(mem):
@@ -329,7 +385,7 @@ def test_recaps_area_preview_and_approve(mem):
     _draft(mem)
     slack = FakeChannel()
     at = admin(ABA, "recaps", mem, slack=slack)
-    assert any("weekly recap" in c.value for c in at.code)
+    assert any("Community Voices recap" in c.value for c in at.code)
     next(b for b in at.button if b.label == "Approve & send to Slack").click().run()
     assert not at.exception, at.exception
     assert [a for a, *_ in slack.sent] == ["C_TEAM"]
@@ -494,7 +550,7 @@ def test_cortex_dm_failures_raise(proc):
 def test_dm_can_include_full_recap(mem):
     slack = FakeChannel()
     rp.publish_draft(sheet_tabs(), TODAY, make_doc=Docs(), slack=slack, dm_user="U_ABA", include_recap=True)
-    assert "Headline numbers" in slack.sent[0][2] and "Recap ready" in slack.sent[0][2]
+    assert "Talks delivered" in slack.sent[0][2] and "Recap ready" in slack.sent[0][2]
 
 
 def test_failed_dm_is_retried_once_on_next_run(mem):

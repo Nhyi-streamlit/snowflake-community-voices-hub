@@ -15,7 +15,8 @@ from utils import recap as rc
 from workflow.channels import DeliveryError
 
 log = logging.getLogger("cv.recap")
-SOURCE_TABS = ["Events", "Speaker_Requests", "Talk_Feedback", "Event_Headcount", "Reimbursements"]
+SOURCE_TABS = ["Events", "Slot_Claims", "Speaker_Updates"]          # hub sheet
+PROGRAM_TABS = ["Speaker-Events"]                                   # program sheet (talks master)
 
 
 @dataclass
@@ -26,12 +27,14 @@ class Outcome:
     doc_url: str = ""
 
 
-def load_tabs(read) -> dict:
-    """{tab: DataFrame or None if unreadable}."""
+def load_tabs(read, read_program=None) -> dict:
+    """{tab: DataFrame or None if unreadable}. `read_program(tab)` reads the program sheet."""
     out = {}
-    for t in SOURCE_TABS:
+    for t, fn in [(t, read) for t in SOURCE_TABS] + [(t, read_program) for t in PROGRAM_TABS]:
         try:
-            out[t] = read(t)
+            if fn is None:
+                raise LookupError("no program sheet reader")
+            out[t] = fn(t)
         except Exception as e:      # missing tab / outage: recap still drafts, and lists what it couldn't read
             log.warning("recap: couldn't read %s (%s)", t, type(e).__name__)
             out[t] = None
