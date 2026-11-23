@@ -541,70 +541,63 @@ with show("travel"):
         st.warning("Expense form template not found. Contact aba.micah@snowflake.com to get one.")
 
     st.divider()
-    st.markdown("#### Upload your completed expense form")
+    st.markdown("#### Upload your expense form and receipts")
     require_sign_in("submit an expense form")
 
     if st.session_state.get("sp_expense_upload_done"):
         st.success("Expense form uploaded. The program team will review it and forward to finance.")
+        if st.session_state.get("sp_expense_failed"):
+            st.warning("These files didn't upload, please email them to aba.micah@snowflake.com: "
+                       + ", ".join(st.session_state["sp_expense_failed"]))
         _exp_link = st.session_state.get("sp_expense_drive_link", "")
         if _exp_link:
-            st.markdown(f"[View your uploaded form in Google Drive]({_exp_link})")
+            st.markdown(f"[View your uploaded files in Google Drive]({_exp_link})")
         if st.button("Upload another form", key="sp_expense_reset"):
             st.session_state.pop("sp_expense_upload_done", None)
             st.session_state.pop("sp_expense_drive_link", None)
+            st.session_state.pop("sp_expense_failed", None)
             st.rerun()
         raise SectionDone
 
+    from utils import expenses as exp
     _exp_name = st.text_input("Your full name *", key="exp_name")
     _exp_event = st.text_input("Event name *", placeholder="Data Summit NYC", key="exp_event")
-    _exp_file = st.file_uploader(
-        "Upload completed expense form",
-        type=["xlsx", "xls", "pdf", "csv"],
-        accept_multiple_files=False,
+    _exp_files = st.file_uploader(
+        "Upload your expense form and receipts *",
+        type=exp.FILE_TYPES,
+        accept_multiple_files=True,
         key="exp_file_upload",
+        help="Add the completed expense form plus photos, screenshots or PDFs of your receipts.",
     )
     _exp_notes = st.text_area("Notes for the reviewer (optional)", height=80, key="exp_notes")
 
     st.info(
-        "Accepted formats: `.xlsx`, `.xls`, `.pdf`, `.csv`. "
-        "Reimbursements are processed within **10 business days** of approval.",
+        f"Attach up to {exp.MAX_FILES} files: the expense form (`.xlsx`, `.xls`, `.csv`, `.pdf`) and receipts "
+        "(photos, screenshots or PDFs). Reimbursements are processed within **10 business days** of approval.",
         icon=":material/info:",
     )
 
-    _exp_can_submit = all([_exp_name, _exp_event, _exp_file])
+    _exp_can_submit = all([_exp_name.strip(), _exp_event.strip(), _exp_files])
     if not _exp_can_submit:
-        st.caption("Fill in your name, event, and attach the form to submit.")
+        st.caption("Fill in your name and event, and attach your files to submit.")
 
     if st.button("Submit expense form", type="primary", disabled=not _exp_can_submit, key="exp_submit"):
-        import uuid as _uuid_exp
-        import mimetypes as _mt_exp
-
-        _exp_id = "EXP-2026-" + _uuid_exp.uuid4().hex[:8].upper()
-        _exp_now = _now()
-        _exp_data = _exp_file.getvalue()
-        _exp_mime = _exp_file.type or _mt_exp.guess_type(_exp_file.name)[0] or "application/octet-stream"
-
-        # Upload to Google Drive
-        _drive_link = ""
-        try:
-            folder_id = get_or_create_receipts_folder(_exp_id)
-            if folder_id:
-                _drive_link = upload_file_to_drive(_exp_data, _exp_file.name, _exp_mime, folder_id) or ""
-        except Exception:
-            pass
-
-        _status = "Uploaded to Drive" if _drive_link else "Upload failed — email form to aba.micah@snowflake.com"
-
-        _row = [
-            _exp_id, _exp_now,
-            _exp_name.strip(), speaker_identity.email,
-            _exp_event.strip(), _exp_file.name,
-            _drive_link, _exp_notes or "", _status,
-        ]
-        if append_row("Expense_Forms", _row):
+        _files = exp.as_files(_exp_files)
+        _problem = exp.check(_files)
+        if _problem:
+            st.error(_problem)
+            raise SectionDone
+        with st.spinner("Uploading your files…"):
+            _res = exp.submit(name=_exp_name, email=speaker_identity.email, event=_exp_event,
+                              notes=_exp_notes or "", files=_files)
+        if _res.saved and not (_res.failed_files and len(_res.failed_files) == len(_files)):
             st.session_state["sp_expense_upload_done"] = True
-            st.session_state["sp_expense_drive_link"] = _drive_link
+            st.session_state["sp_expense_drive_link"] = _res.folder_link
+            st.session_state["sp_expense_failed"] = list(_res.failed_files)
             st.rerun()
+        elif _res.saved:
+            st.error("We saved your details but couldn't upload the files. Please try again, or email them to "
+                     f"aba.micah@snowflake.com with reference {_res.expense_id}.")
         else:
             st.error("Could not save. Please try again or email aba.micah@snowflake.com.")
 
