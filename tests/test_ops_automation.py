@@ -363,8 +363,10 @@ def test_non_admin_cannot_open_ops_areas(mem):
         assert not any("Needs you" in m.value or "Weekly recaps" in m.value for m in at.markdown)
 
 
-def test_needs_you_renders_and_apply_drafts_without_sending(mem):
-    mail = Mail()
+def test_needs_you_renders_and_apply_drafts_without_sending(mem, monkeypatch):
+    real = tr.triage
+    monkeypatch.setattr(tr, "triage", lambda ev, rq, rules=None, today=None, **k: real(ev, rq, rules, today=TODAY, **k))
+    mail = Mail()     # triage pinned to the sample week, so the sample events never fall into the past
     at = admin(ABA, "needs", mem, mail=mail)
     text = " ".join(m.value for m in at.markdown)
     assert "Needs you · 3 pending" in text and "Tiny Meetup" in text
